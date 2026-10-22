@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3c5c9c"/><stop offset="0.55" stop-color="#e9a46a"/><stop offset="1" stop-color="#fbd9a4"/>
+    </linearGradient>
+    <linearGradient id="turf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5aa846"/><stop offset="1" stop-color="#2f6b2a"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#sky)"/>
+  <circle cx="380" cy="150" r="56" fill="#fff3d6" opacity="0.85"/>
+  <rect y="360" width="512" height="152" fill="url(#turf)"/>
+  <rect y="352" width="512" height="10" fill="#fff"/>
+  <path fill="#2a170d" d="M96 330c22-40 70-62 128-60 40 2 70-6 96-30l28-44c8-12 22-18 36-14l30 10-10 18-22-2-18 40c-8 20-2 34 10 50l30 40-16 10-40-44-26 20 20 58-18 6-30-62c-30 8-64 8-96 2l-40 58-16-8 30-62c-24 2-40 14-56 34l-20 28-14-10 26-40c-4-14-12-22-28-28z"/>
+  <path fill="#1e3a8a" d="M250 200c10-24 34-36 56-30l-10 40-40 14z"/>
+  <circle cx="290" cy="160" r="16" fill="#f5c518"/>
+</svg>
