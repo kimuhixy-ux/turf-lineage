@@ -55,11 +55,15 @@ export function horseClass(h) {
   return ['', '1勝', '2勝', '3勝'][r.wins];
 }
 
+// 血統表の祖先と同じ名前の馬が生まれると、別の馬なのにクロス扱いになるので避ける
+const RESERVED_NAMES = new Set();
+export const reserveNames = (list) => list.forEach((n) => n && RESERVED_NAMES.add(n));
+
 export function makeName(names, taken = new Set()) {
   for (let i = 0; i < 40; i += 1) {
     const name = pick(names.head) + pick(names.tail);
     // 競走馬名は9文字以内という実際のルールに合わせる
-    if (name.length <= 9 && !taken.has(name)) return name;
+    if (name.length <= 9 && !taken.has(name) && !RESERVED_NAMES.has(name)) return name;
   }
   return pick(names.head) + pick(names.tail);
 }
@@ -107,11 +111,14 @@ function inheritGrowth(sire, dam) {
 }
 
 // 父と母（どちらも stats / dist / surface / growth / coat を持つ）から仔を作る
-export function breedFoal({ sire, dam, birthYear, names, sex }) {
+// diag は配合診断の結果。補正値と能力のブレ幅（sd）をここで反映する
+export function breedFoal({ sire, dam, birthYear, names, sex, diag }) {
   const bonus = Math.random() < 0.06 ? rand(5, 10) : rand(-3, 3);
+  const sd = diag?.sd ?? 1;
   const potential = {};
   for (const k of STAT_KEYS) {
-    potential[k] = clamp(sire.stats[k] * 0.52 + dam.stats[k] * 0.48 + gauss() * 6 + bonus - 4, 30, 100);
+    const theory = diag?.bonus[k] ?? 0;
+    potential[k] = clamp(sire.stats[k] * 0.52 + dam.stats[k] * 0.48 + gauss() * 6 * sd + bonus - 4 + theory, 30, 100);
   }
   const s = surfaceOf(sire);
   const d = surfaceOf(dam);
@@ -125,7 +132,8 @@ export function breedFoal({ sire, dam, birthYear, names, sex }) {
     dist: inheritDistance(sire, dam),
     growth: inheritGrowth(sire, dam),
     coat: inheritCoat(sire, dam),
-    sireId: sire.id, sireName: sire.name, damName: dam.name,
+    sireId: sire.id, sireName: sire.name, sireLine: sire.line, damName: dam.name,
+    ped: diag?.ped ?? null,
     name: makeName(names),
   });
 }
@@ -163,12 +171,14 @@ export function randomDam(sires, names) {
     growth: pick(['early', 'normal', 'late']),
     coat: weighted(COATS, (c) => c.weight).id,
     sireName: sire.name, level,
+    damName: makeName(names),
+    damSireName: pick(sires.filter((x) => x.id !== sire.id)).name,
   };
 }
 
 // 年齢 age の時点まで育った状態で馬を作る（セリ用）
-export function grownHorse({ sire, dam, year, age, names }) {
-  const h = breedFoal({ sire, dam, birthYear: year - age, names });
+export function grownHorse({ sire, dam, year, age, names, diag }) {
+  const h = breedFoal({ sire, dam, birthYear: year - age, names, diag });
   for (const k of STAT_KEYS) h.stats[k] = statCeiling(h, k, year) * rand(0.78, 0.9);
   return h;
 }

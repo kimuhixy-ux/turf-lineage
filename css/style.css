@@ -466,3 +466,18 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: var(--muted); }
 .race-intro-grade { padding: 2px 14px; border-radius: 6px; background: #2350b8; font-weight: 800; }
 .race-intro-name { font-size: clamp(28px, 8vw, 48px); font-weight: 800; font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); }
 .race-intro-sub { font-size: 14px; opacity: 0.9; }
+
+/* 配合理論：血統表と診断 */
+.ped-table { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(16, minmax(26px, auto)); gap: 2px; margin: 8px 0; font-size: 11px; line-height: 1.25; }
+.ped-cell { display: flex; flex-direction: column; justify-content: center; padding: 2px 4px; border-radius: 4px; background: var(--surface-2); border-left: 3px solid #2f7fd1; overflow-wrap: anywhere; min-width: 0; }
+.ped-cell.is-female { border-left-color: #d0607a; }
+.ped-cell small { color: var(--muted); font-size: 10px; }
+.ped-cell.is-cross { background: color-mix(in srgb, var(--gold) 26%, var(--surface-2)); font-weight: 700; }
+.ped-cell.is-cross span::before { content: '★'; color: var(--gold); }
+.rank-S { background: var(--gold); color: #1a1405; border-color: transparent; }
+.rank-A { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.rank-D { color: var(--warn); }
+.breed-notes { display: grid; gap: 6px; margin: 8px 0; }
+.breed-note { padding: 6px 10px; border-radius: 8px; border-left: 4px solid var(--good); background: var(--surface-2); }
+.breed-note.tone-warn { border-left-color: #e0b640; }
+.breed-note.tone-bad { border-left-color: var(--warn); }

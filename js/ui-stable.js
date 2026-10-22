@@ -2,10 +2,11 @@ import { el, formatMoney, formatDate } from './util.js';
 import { STYLES, GROWTH_LABELS, horseAge, horseClass, overallRating, gradeOf } from './horse.js';
 import { INTENSITY } from './training.js';
 import { entryBlocker } from './race-data.js';
-import { weekRaces, retireHorse, renameHorse } from './game.js';
+import { weekRaces, retireHorse, renameHorse, bloodbook } from './game.js';
+import { findCrosses } from './bloodline.js';
 import {
   openSheet, confirmSheet, toast, paddockPortrait, horseThumb, radarChart, statBars, skillBars, meter,
-  segmented, conditionBadge, gradeBadge, horseSubtitle,
+  segmented, conditionBadge, gradeBadge, horseSubtitle, pedigreeTable, rankChip, breedingNotes, openBreedingGuide,
 } from './ui-common.js';
 
 export function planText(h, state, data) {
@@ -69,6 +70,18 @@ function profileRows(h, state) {
     ['総合評価', gradeOf(overallRating(h.stats))],
   ];
   return el('dl', { class: 'info-grid' }, rows.flatMap(([k, v]) => [el('dt', { text: k }), el('dd', { text: v })]));
+}
+
+// 配合理論を入れる前に生まれた馬には診断結果がないので、血統表だけ見せる
+function pedigreeSection(h, ctx) {
+  if (!h.ped) return null;
+  const book = bloodbook(ctx.state, ctx.data);
+  return el('section', { class: 'card' }, [
+    el('h3', {}, ['血統表', h.breeding ? rankChip(h.breeding.rank) : null]),
+    pedigreeTable(h.ped, book, findCrosses(h.ped, book).map((c) => c.name)),
+    h.breeding ? breedingNotes(h.breeding.notes) : null,
+    el('button', { class: 'btn btn-small', text: '配合理論の解説', onclick: () => openBreedingGuide(ctx.data) }),
+  ]);
 }
 
 const aptMark = (v) => (v >= 0.97 ? '◎' : v >= 0.92 ? '○' : v >= 0.87 ? '△' : '×');
@@ -152,6 +165,7 @@ export function renderHorse(h, ctx) {
       skillBars(h),
     ]),
     el('section', { class: 'card' }, [el('h3', { text: 'プロフィール' }), profileRows(h, state)]),
+    pedigreeSection(h, ctx),
     el('section', { class: 'card' }, [el('h3', { text: '成績' }), recordTable(h)]),
     manageButtons(h, ctx),
   ]);

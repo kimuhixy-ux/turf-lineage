@@ -2,8 +2,13 @@ import { el, formatMoney } from './util.js';
 import { STAT_KEYS, STAT_LABELS, GROWTH_LABELS, coatById, gradeOf, overallRating } from './horse.js';
 import {
   allSires, auctionOpen, buyLot, breedMare, breedingSeason, deleteSave, BREEDING_WEEKS, AUCTION_WEEKS,
+  bloodbook, breedingPlan,
 } from './game.js';
-import { openSheet, confirmSheet, toast, horseThumb, statBars, gradeBadge } from './ui-common.js';
+import {
+  openSheet, confirmSheet, toast, horseThumb, statBars, gradeBadge,
+  pedigreeTable, rankChip, breedingNotes, openBreedingGuide,
+} from './ui-common.js';
+import { findCrosses } from './bloodline.js';
 
 const surfaceText = (s) => ({ turf: '芝', dirt: 'ダート', both: '芝・ダ兼用' }[s]);
 
@@ -12,29 +17,50 @@ function sireSummary(s) {
   return `${surfaceText(s.surface)}・${s.dist[0]}〜${s.dist[1]}m・${GROWTH_LABELS[s.growth]}・得意 ${best.join('/')}`;
 }
 
-function openSirePicker(mare, ctx) {
-  const { state, data, refresh } = ctx;
-  let close;
-  const rows = [...allSires(state, data)].sort((a, b) => b.fee - a.fee).map((s) => el('div', { class: 'race-row' }, [
+function openPlanDetail(mare, sire, plan, book) {
+  openSheet(`${sire.name} × ${mare.name}`, [
+    el('p', {}, [rankChip(plan.rank), el('span', { class: 'muted small', text: ' 生まれる仔の血統表（★はクロス）' })]),
+    pedigreeTable(plan.ped, book, plan.crossNames),
+    breedingNotes(plan.items),
+  ]);
+}
+
+function sireRow(s, mare, ctx, book, onBreed) {
+  const plan = breedingPlan(ctx.state, ctx.data, mare, s, book);
+  return el('div', { class: 'race-row' }, [
     el('div', {}, [
       el('b', { text: s.name }),
       el('span', { class: 'chip', text: gradeOf(overallRating(s.stats)) }),
-      el('div', { class: 'muted small', text: `${s.line}系・${coatById(s.coat).name}・${sireSummary(s)}` }),
+      rankChip(plan.rank),
+      el('div', { class: 'muted small', text: `${s.line}・${coatById(s.coat).name}・${sireSummary(s)}` }),
       el('div', { class: 'small', text: s.desc }),
+      el('div', { class: 'tags' }, plan.items.map((it) => el('span', { class: `tag${it.tone === 'good' ? '' : ' is-down'}`, text: it.title }))),
     ]),
-    el('button', {
-      class: 'btn btn-primary btn-small', text: formatMoney(s.fee),
-      onclick: () => {
-        const err = breedMare(state, data, mare.id, s.id);
-        if (err) return toast(err);
-        close();
-        toast(`${mare.name}に${s.name}を種付けしました。来年の1月に仔馬が生まれます`);
-        refresh();
-      },
-    }),
-  ]));
+    el('div', { class: 'btn-col' }, [
+      el('button', { class: 'btn btn-small', text: '配合診断', onclick: () => openPlanDetail(mare, s, plan, book) }),
+      el('button', { class: 'btn btn-primary btn-small', text: formatMoney(s.fee), onclick: () => onBreed(s) }),
+    ]),
+  ]);
+}
+
+function openSirePicker(mare, ctx) {
+  const { state, data, refresh } = ctx;
+  const book = bloodbook(state, data);
+  let close;
+  const onBreed = (s) => {
+    const err = breedMare(state, data, mare.id, s.id);
+    if (err) return toast(err);
+    close();
+    toast(`${mare.name}に${s.name}を種付けしました。来年の1月に仔馬が生まれます`);
+    refresh();
+  };
+  const rows = [...allSires(state, data)].sort((a, b) => b.fee - a.fee).map((s) => sireRow(s, mare, ctx, book, onBreed));
   close = openSheet(`${mare.name}の種付け`, [
-    el('p', { class: 'muted small', text: `母の特徴：${sireSummary(mare)}。仔は父52%・母48%の割合で能力を受けつぎ、ときどき両親を超える仔も生まれます。` }),
+    el('p', { class: 'muted small', text: `母の特徴：${sireSummary(mare)}。仔は父52%・母48%の割合で能力を受けつぎ、配合理論（クロス・ニックス・活力・母の実績）の補正が加わります。` }),
+    el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn btn-small', text: '母の血統表', onclick: () => openSheet(`${mare.name}の血統`, [pedigreeTable(mare.ped, book)]) }),
+      el('button', { class: 'btn btn-small', text: '配合理論の解説', onclick: () => openBreedingGuide(data) }),
+    ]),
     ...rows,
   ]);
 }
@@ -54,7 +80,7 @@ function mareCard(mare, ctx) {
   ]);
 }
 
-function lotCard(lot, ctx) {
+function lotCard(lot, ctx, book) {
   const { state, refresh } = ctx;
   const h = lot.horse;
   const detail = () => openSheet(`${h.name}（上場馬）`, [
@@ -62,6 +88,9 @@ function lotCard(lot, ctx) {
     el('p', { class: 'small', text: `距離 ${h.dist[0]}〜${h.dist[1]}m・${GROWTH_LABELS[h.growth]}・脚質 ${h.style}` }),
     statBars(h),
     el('p', { class: 'muted small', text: '▼は相馬眼による伸びしろの見込みです（誤差あり）。' }),
+    h.ped ? pedigreeTable(h.ped, book, findCrosses(h.ped, book).map((c) => c.name)) : null,
+    h.breeding ? el('p', {}, [rankChip(h.breeding.rank)]) : null,
+    h.breeding ? breedingNotes(h.breeding.notes) : null,
   ]);
   const buy = () => confirmSheet(`${h.name}を${formatMoney(lot.price)}で落札しますか？`, '落札する', () => {
     const err = buyLot(state, lot.id);
@@ -71,7 +100,7 @@ function lotCard(lot, ctx) {
   return el('div', { class: `horse-card${lot.sold ? ' is-sold' : ''}` }, [
     horseThumb(h, null),
     el('div', { class: 'horse-card-main' }, [
-      el('div', { class: 'horse-card-name' }, [el('b', { text: h.name }), el('span', { class: 'chip', text: `見込み ${gradeOf(overallRating(h.estimate))}` })]),
+      el('div', { class: 'horse-card-name' }, [el('b', { text: h.name }), el('span', { class: 'chip', text: `見込み ${gradeOf(overallRating(h.estimate))}` }), h.breeding ? rankChip(h.breeding.rank) : null]),
       el('div', { class: 'muted small', text: `${h.sex}・父 ${h.sireName}・${h.dist[0]}〜${h.dist[1]}m・${GROWTH_LABELS[h.growth]}` }),
       el('div', { class: 'btn-row' }, [
         el('button', { class: 'btn btn-small', text: '詳しく', onclick: detail }),
@@ -84,10 +113,11 @@ function lotCard(lot, ctx) {
 export function renderFarm(ctx) {
   const { state, data } = ctx;
   const open = auctionOpen(state);
+  const book = bloodbook(state, data);
   return el('div', { class: 'page' }, [
     el('h3', { class: 'section-title', text: open ? (state.auction.key === 'start' ? '2歳トレーニングセール（開幕記念）' : '1歳馬セリ') : 'セリ' }),
     open ? el('p', { class: 'muted small', text: `資金 ${formatMoney(state.money)}。買った馬は厩舎に入ります。` }) : el('p', { class: 'muted small', text: `1歳馬のセリは毎年7〜8月（第${AUCTION_WEEKS[0]}〜${AUCTION_WEEKS[1]}週）に開かれます。` }),
-    ...(open ? state.auction.lots.map((lot) => lotCard(lot, ctx)) : []),
+    ...(open ? state.auction.lots.map((lot) => lotCard(lot, ctx, book)) : []),
     el('h3', { class: 'section-title', text: `繁殖牝馬（${state.mares.length}頭）` }),
     ...state.mares.map((m) => mareCard(m, ctx)),
     state.ownSires.length ? el('h3', { class: 'section-title', text: '自厩舎の種牡馬' }) : null,

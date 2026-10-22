@@ -3,6 +3,7 @@ import {
   STAT_KEYS, grownHorse, randomDam, breedFoal, horseAge, horseClass, overallRating, makeName,
 } from './horse.js';
 import { applyTraining, applyRest, applyRaceAftermath } from './training.js';
+import { createBloodbook, diagnose, breedingRecord, joinPed } from './bloodline.js';
 import { racesForWeek, npcHorse, weatherFor } from './race-data.js';
 
 const SAVE_KEY = 'turf-lineage-save-v1';
@@ -42,17 +43,29 @@ export function deleteSave() {
 }
 
 export const allSires = (state, data) => [...data.sires, ...state.ownSires];
+export const bloodbook = (state, data) => createBloodbook(data, state.ownSires);
 
 function makeMare(dam) {
-  return { id: uid(), name: dam.name, stats: dam.stats, surface: dam.surface, dist: dam.dist, growth: dam.growth, coat: dam.coat, sireName: dam.sireName, bred: null, record: null };
+  return { id: uid(), name: dam.name, stats: dam.stats, surface: dam.surface, dist: dam.dist, growth: dam.growth, coat: dam.coat, sireName: dam.sireName, ped: dam.ped ?? null, bred: null, record: null };
+}
+
+// 架空の繁殖牝馬に、父・母父から3代分の血統表を付ける
+function pedigreedDam(data, book) {
+  const dam = randomDam(data.sires, data.names);
+  dam.ped = book.mareNode(dam.name, dam.sireName, book.mareNode(dam.damName, dam.damSireName)).ped;
+  return dam;
+}
+
+export function breedingPlan(state, data, mare, sire, book = bloodbook(state, data)) {
+  return diagnose(book, book.stallion(sire.name), { name: mare.name, ped: mare.ped ?? [] }, mare);
 }
 
 export function newGame({ stableName, silks }, data) {
   const state = {
-    v: 1, stableName, silks, year: 1, week: 13, money: 8000,
+    v: 2, stableName, silks, year: 1, week: 13, money: 8000,
     horses: [], mares: [], ownSires: [], history: [], titles: [], auction: null, news: [],
   };
-  state.mares.push(makeMare(randomDam(data.sires, data.names)));
+  state.mares.push(makeMare(pedigreedDam(data, bloodbook(state, data))));
   state.auction = { key: 'start', until: 20, lots: makeLots(state, data, 2, 8) };
   return state;
 }
@@ -65,11 +78,14 @@ function lotPrice(h, sire) {
 
 function makeLots(state, data, age, count) {
   const sires = allSires(state, data);
+  const book = bloodbook(state, data);
   return Array.from({ length: count }, () => {
     const sire = pick(sires);
-    const dam = randomDam(data.sires, data.names);
-    const horse = grownHorse({ sire, dam, year: state.year, age, names: data.names });
+    const dam = pedigreedDam(data, book);
+    const diag = breedingPlan(state, data, dam, sire, book);
+    const horse = grownHorse({ sire, dam, year: state.year, age, names: data.names, diag });
     horse.damSire = dam.sireName;
+    horse.breeding = breedingRecord(diag);
     return { id: uid(), horse, price: lotPrice(horse, sire), sold: false };
   });
 }
@@ -116,7 +132,7 @@ export function retireHorse(state, horseId, toBreeding) {
   const g1 = h.record.titles.filter((t) => t.grade === 'G1').length;
   if (h.sex === '牡' && g1 > 0) {
     state.ownSires.push({
-      id: `own-${h.id}`, name: h.name, line: '自家生産', fee: 300 + g1 * 400, surface: h.apt.turf >= h.apt.dirt ? 'turf' : 'dirt',
+      id: `own-${h.id}`, name: h.name, line: h.sireLine ?? '自家生産', ped: h.ped, fee: 300 + g1 * 400, surface: h.apt.turf >= h.apt.dirt ? 'turf' : 'dirt',
       dist: h.dist, growth: h.growth, coat: h.coat, stats: { ...h.potential }, desc: `G1を${g1}勝した自厩舎の名馬。`,
     });
     return `${h.name}は種牡馬入りしました！`;
@@ -230,8 +246,10 @@ function newYear(state, data) {
     if (mare.bred?.year !== state.year - 1) continue;
     const sire = allSires(state, data).find((s) => s.id === mare.bred.sireId);
     if (!sire) continue;
-    const foal = breedFoal({ sire, dam: mare, birthYear: state.year, names: data.names });
+    const diag = breedingPlan(state, data, mare, sire);
+    const foal = breedFoal({ sire, dam: mare, birthYear: state.year, names: data.names, diag });
     foal.damSire = mare.sireName;
+    foal.breeding = breedingRecord(diag);
     state.horses.push(foal);
     events.push(`${mare.name}に${foal.sex === '牡' ? '牡馬' : '牝馬'}が誕生しました（父 ${sire.name}）`);
     mare.bred = null;
@@ -265,6 +283,22 @@ export function endWeek(state, data) {
   }
   if (state.week === BREEDING_WEEKS[0] && state.mares.length) events.push('種付けシーズンが始まりました（5月末まで）');
   return events;
+}
+
+// 配合理論を入れる前（v1）のセーブには血統表がないので、分かる範囲で作り直す
+export function migrateState(state, data) {
+  if ((state.v ?? 1) >= 2) return state;
+  const book = bloodbook(state, data);
+  for (const h of state.horses) {
+    if (h.ped) continue;
+    h.ped = joinPed(book.stallion(h.sireName), book.mareNode(h.damName, h.damSire ?? pick(data.sires).name));
+    h.sireLine = allSires(state, data).find((x) => x.name === h.sireName)?.line;
+  }
+  for (const m of state.mares) {
+    if (!m.ped) m.ped = book.mareNode(m.name, m.sireName, book.mareNode(makeName(data.names), pick(data.sires).name)).ped;
+  }
+  state.v = 2;
+  return state;
 }
 
 export function nameTaken(state) {

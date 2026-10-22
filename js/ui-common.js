@@ -225,3 +225,42 @@ export function segmented(options, current, onPick) {
     text: label, onclick: () => onPick(value),
   })));
 }
+
+// 血統表：4代分を CSS グリッドで並べる。代が進むほど1マスの縦幅を半分にする
+export function pedigreeTable(ped, book, crossNames = []) {
+  const cells = [];
+  for (let k = 2; k < 32; k += 1) {
+    const gen = 31 - Math.clz32(k);
+    const span = 16 >> (gen - 1);
+    const row = (k - (1 << gen)) * span + 1;
+    const name = ped?.[k] || '—';
+    const line = k % 2 === 0 ? book.lineOf(name) : '';
+    const cls = `ped-cell ${k % 2 === 0 ? 'is-male' : 'is-female'}${crossNames.includes(name) ? ' is-cross' : ''}`;
+    cells.push(el('div', { class: cls, style: `grid-column:${gen};grid-row:${row} / span ${span}` }, [
+      el('span', { text: name }),
+      line ? el('small', { text: line }) : null,
+    ]));
+  }
+  return el('div', { class: 'ped-table' }, cells);
+}
+
+export const rankChip = (rank) => el('span', { class: `chip rank rank-${rank}`, text: `配合${rank}` });
+
+export function breedingNotes(notes) {
+  if (!notes.length) return el('p', { class: 'muted small', text: '目立った配合の特徴はありません（平凡な配合）。' });
+  return el('div', { class: 'breed-notes' }, notes.map((n) => el('div', { class: `breed-note tone-${n.tone}` }, [
+    el('b', { text: n.title }),
+    el('span', { class: 'small', text: ` ${n.label}` }),
+    el('div', { class: 'small', text: n.text }),
+  ])));
+}
+
+export function openBreedingGuide(data) {
+  openSheet('配合理論の解説', data.bloodlines.guide.flatMap((g) => [
+    el('h4', { text: g.title }),
+    el('p', { class: 'small', text: g.text }),
+  ]).concat([
+    el('h4', { text: '5つの系統' }),
+    ...data.bloodlines.lines.map((l) => el('p', { class: 'small' }, [el('b', { text: `${l.name}（始祖 ${l.founder}）` }), ` ${l.desc}`])),
+  ]));
+}
