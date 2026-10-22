@@ -177,8 +177,8 @@ export function randomDam(sires, names) {
 }
 
 // 年齢 age の時点まで育った状態で馬を作る（セリ用）
-export function grownHorse({ sire, dam, year, age, names, diag }) {
-  const h = breedFoal({ sire, dam, birthYear: year - age, names, diag });
+export function grownHorse({ sire, dam, year, age, names, diag, sex }) {
+  const h = breedFoal({ sire, dam, birthYear: year - age, names, diag, sex });
   for (const k of STAT_KEYS) h.stats[k] = statCeiling(h, k, year) * rand(0.78, 0.9);
   return h;
 }

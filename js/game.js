@@ -76,14 +76,20 @@ function lotPrice(h, sire) {
   return clamp(Math.round((base * rand(0.8, 1.25)) / 50) * 50, 300, 30000);
 }
 
+// シンフォニアレクスと配合Sになる母を手に入れやすいよう、グランシャトー産駒の牝馬を多めに上場する
+const FEATURED_FILLY_SIRE = 's02';
+const FEATURED_FILLY_RATE = 0.3;
+
 function makeLots(state, data, age, count) {
   const sires = allSires(state, data);
   const book = bloodbook(state, data);
+  const featured = sires.find((s) => s.id === FEATURED_FILLY_SIRE);
   return Array.from({ length: count }, () => {
-    const sire = pick(sires);
+    const isFeatured = featured && Math.random() < FEATURED_FILLY_RATE;
+    const sire = isFeatured ? featured : pick(sires);
     const dam = pedigreedDam(data, book);
     const diag = breedingPlan(state, data, dam, sire, book);
-    const horse = grownHorse({ sire, dam, year: state.year, age, names: data.names, diag });
+    const horse = grownHorse({ sire, dam, year: state.year, age, names: data.names, diag, sex: isFeatured ? '牝' : undefined });
     horse.damSire = dam.sireName;
     horse.breeding = breedingRecord(diag);
     return { id: uid(), horse, price: lotPrice(horse, sire), sold: false };
