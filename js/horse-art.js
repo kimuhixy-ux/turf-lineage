@@ -2,6 +2,7 @@ import { coatById } from './horse.js';
 
 // 馬は「体長220・地面 y=0・右向き」のローカル座標で描き、拡大縮小で使い回す
 const TAU = Math.PI * 2;
+const RAD = Math.PI / 180;
 // 枠番ごとの帽子・ゼッケンの色（実際の競馬と同じ並び）
 export const FRAME_COLORS = ['#f5f5f2', '#1b1b1b', '#d8262f', '#2357c7', '#f2cf1d', '#1f9a4a', '#f08a1c', '#f08bb4'];
 const FRAME_TEXT = ['#111', '#fff', '#fff', '#fff', '#111', '#fff', '#111', '#111'];
@@ -15,43 +16,132 @@ export function shade(hex, amount) {
   return `rgb(${r},${g},${b})`;
 }
 
-// 襲歩（ギャロップ）の脚の順番。後ろ脚→前脚の順で地面を蹴る
-const GALLOP_LEGS = [
-  { front: false, near: false, offset: 0.08 },
-  { front: true, near: false, offset: 0.42 },
-  { front: false, near: true, offset: 0 },
-  { front: true, near: true, offset: 0.52 },
+// 脚は3本の骨（前脚：前腕・管・繋ぎ／後脚：脛・管・繋ぎ）をつないで描く
+const FORE_LEN = [56, 40, 14];
+const HIND_LEN = [52, 48, 14];
+const FORE_ROOT = { x: 50, y: -110 };
+const HIND_ROOT = { x: -58, y: -114 };
+// マイブリッジ「The Horse in Motion」（1878年・パブリックドメイン）の11コマから読み取った襲歩。
+// 1歩を11等分し、着地の瞬間を0番として各骨の向きを度で持つ（真下が0、前向きが正）
+const FORE_CYCLE = [
+  [34, 26, 20], [10, 4, 36], [-12, -14, 40], [-30, -40, -10], [-20, -90, -120], [5, -115, -160],
+  [25, -100, -150], [45, -50, -100], [64, 0, -40], [70, 50, 10], [52, 42, 24],
+];
+const HIND_CYCLE = [
+  [0, 30, 28], [-30, 0, 40], [-58, -30, 10], [-75, -60, -50], [-70, -90, -100], [-45, -100, -120],
+  [-15, -80, -125], [14, -35, -90], [30, 8, -40], [32, 38, 2], [16, 40, 22],
+];
+// 写真では後脚は約2.5コマ、前脚は約3.5コマのあいだ地面に着いている
+const STANCE_KEYS = { fore: 3.6, hind: 2.6 };
+// 写真では 右後→左後→右前→左前 の順に着地し、2〜4コマ目は4本とも宙に浮く
+const LEGS = [
+  { front: false, near: false, land: 4 / 11, sock: 0, stand: [-26, 2, 24] },
+  { front: true, near: false, land: 6 / 11, sock: 1, stand: [-3, -1, 22] },
+  { front: false, near: true, land: 5 / 11, sock: 2, stand: [-20, 6, 24] },
+  { front: true, near: true, land: 7 / 11, sock: 3, stand: [3, 0, 22] },
 ];
 
-function legPose(leg, phase, pose) {
-  if (pose === 'stand') {
-    const lean = leg.near ? 0.02 : -0.04;
-    return leg.front ? { upper: lean, lower: 0 } : { upper: -0.12 + lean, lower: 0.18 };
-  }
-  const th = TAU * (phase + leg.offset);
-  if (leg.front) return { upper: 0.6 * Math.sin(th), lower: -Math.max(0, Math.sin(th + 1.4)) * 1.7 };
-  return { upper: 0.55 * Math.sin(th) - 0.12, lower: Math.max(0, Math.sin(th + 1.1)) * 1.3 + 0.15 };
+// 角が出ないよう、前後2コマずつを使った曲線（Catmull-Rom）でコマの間をつなぐ
+function smoothStep(a, b, c, d, t) {
+  return b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
 }
 
-function drawLeg(ctx, leg, pose, coat, sock, far) {
-  const root = leg.front ? { x: 50, y: -106 } : { x: -56, y: -116 };
-  if (far) root.x -= 8;
-  const up = leg.front ? 50 : 50;
-  const low = leg.front ? 52 : 62;
-  const k = { x: root.x + Math.sin(pose.upper) * up, y: root.y + Math.cos(pose.upper) * up };
-  const a2 = pose.upper + pose.lower;
-  const f = { x: k.x + Math.sin(a2) * low, y: k.y + Math.cos(a2) * low };
-  const bodyColor = far ? coat.shade : coat.body;
-  const lowerColor = sock ? '#f4f1ea' : (far ? shade(coat.points, -0.05) : coat.points);
+const legPhase = (leg, t) => ((t - leg.land) % 1 + 1) % 1;
+
+function gallopAngles(leg, t) {
+  const keys = leg.front ? FORE_CYCLE : HIND_CYCLE;
+  const n = keys.length;
+  const f = legPhase(leg, t) * n;
+  const i = Math.floor(f);
+  const k = (j) => keys[(i + j + n) % n];
+  return k(0).map((_, s) => smoothStep(k(-1)[s], k(0)[s], k(1)[s], k(2)[s], f - i));
+}
+
+function legPoints(leg, angles, far) {
+  const root = leg.front ? FORE_ROOT : HIND_ROOT;
+  const lens = leg.front ? FORE_LEN : HIND_LEN;
+  const pts = [{ x: root.x - (far ? 8 : 0), y: root.y }];
+  angles.forEach((deg, i) => {
+    const p = pts[i];
+    pts.push({ x: p.x + Math.sin(deg * RAD) * lens[i], y: p.y + Math.cos(deg * RAD) * lens[i] });
+  });
+  return pts;
+}
+
+const hoofBottom = (leg, angles) => legPoints(leg, angles, false)[3].y + 5;
+
+// 接地している脚のひづめが地面にちょうど着く高さを、1歩ぶん先に計算しておく
+function buildGround(n) {
+  const raw = Array.from({ length: n }, (_, i) => {
+    const grounded = LEGS.filter((l) => legPhase(l, i / n) * 11 < STANCE_KEYS[l.front ? 'fore' : 'hind']);
+    const ys = grounded.map((l) => hoofBottom(l, gallopAngles(l, i / n)));
+    return ys.length ? -Math.max(...ys) : null;
+  });
+  const at = (i) => raw[(i + n) % n];
+  const filled = raw.map((v, i) => {
+    if (v != null) return v;
+    let a = i;
+    let b = i;
+    while (at(a) == null) a -= 1;
+    while (at(b) == null) b += 1;
+    const u = (i - a) / (b - a);
+    // 4本とも浮いている間は、前後の高さをつないで少し跳ね上げる
+    return at(a) * (1 - u) + at(b) * u - Math.sin(u * Math.PI) * 6;
+  });
+  // 着地する脚が入れ替わる瞬間のガタつきをならす
+  return filled.map((v, i) => (filled[(i + n - 1) % n] + v * 2 + filled[(i + 1) % n]) / 4);
+}
+
+const GROUND = buildGround(66);
+const STAND_GROUND = -Math.max(...LEGS.map((l) => hoofBottom(l, l.stand)));
+
+function groundAt(t) {
+  const f = t * GROUND.length;
+  const i = Math.floor(f);
+  return GROUND[i % GROUND.length] * (1 - (f - i)) + GROUND[(i + 1) % GROUND.length] * (f - i);
+}
+
+function drawLeg(ctx, leg, angles, coat, sock, far) {
+  const [root, joint, fetlock, hoof] = legPoints(leg, angles, far);
+  const skin = far ? coat.shade : coat.body;
+  const points = far ? shade(coat.points, -0.05) : coat.points;
+  const lower = sock ? '#f4f1ea' : points;
+  ctx.fillStyle = skin;
+  if (leg.front) taper(ctx, root, joint, 24, 11);
+  else taper(ctx, { x: root.x + 4, y: root.y - 12 }, joint, 30, 12);
   ctx.lineCap = 'round';
-  ctx.fillStyle = bodyColor;
-  taper(ctx, root, k, leg.front ? 22 : 34, leg.front ? 11 : 12);
-  ctx.strokeStyle = lowerColor;
-  ctx.lineWidth = 8;
-  line(ctx, k, f);
-  ctx.fillStyle = far ? '#151210' : '#2a2420';
+  ctx.strokeStyle = lower;
+  ctx.lineWidth = 7.5;
+  line(ctx, joint, fetlock);
+  ctx.lineWidth = 6;
+  line(ctx, fetlock, hoof);
+  // 膝・飛節・球節（足首）の出っぱりを描くと、棒ではなく骨の通った脚に見える
+  ctx.fillStyle = leg.front ? points : skin;
+  dot(ctx, joint, leg.front ? 5.5 : 6.5);
+  ctx.fillStyle = lower;
+  dot(ctx, fetlock, 4.4);
+  drawHoof(ctx, hoof, angles[2] * RAD, far ? '#151210' : '#2a2420');
+}
+
+function drawHoof(ctx, p, angle, color) {
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  // 蹄の前面は繋ぎとほぼ平行だが、底は地面に近い向きになるので回転を半分にする
+  ctx.rotate(-angle * 0.5);
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.ellipse(f.x + Math.sin(a2) * 3, f.y + 3, 6, 4.5, a2, 0, TAU);
+  ctx.moveTo(-4.2, -2);
+  ctx.lineTo(3.6, -2);
+  ctx.lineTo(6.8, 5.5);
+  ctx.lineTo(-4.6, 5.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function dot(ctx, p, r) {
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r, 0, TAU);
   ctx.fill();
 }
 
@@ -76,39 +166,69 @@ function line(ctx, a, b) {
   ctx.stroke();
 }
 
+// 写真の馬の輪郭に合わせた胴：丸い尻、低いき甲の後ろのくぼみ、深い胸、締まった腹
 function bodyPath(ctx) {
   ctx.beginPath();
-  ctx.moveTo(-80, -128);
-  ctx.bezierCurveTo(-84, -152, -62, -162, -40, -156);
-  ctx.bezierCurveTo(-15, -148, 15, -148, 38, -156);
-  ctx.bezierCurveTo(58, -162, 76, -142, 76, -118);
-  ctx.bezierCurveTo(76, -100, 63, -90, 45, -90);
-  ctx.bezierCurveTo(20, -85, -20, -85, -46, -92);
-  ctx.bezierCurveTo(-66, -96, -82, -108, -80, -128);
+  ctx.moveTo(-62, -162);
+  ctx.bezierCurveTo(-80, -160, -91, -142, -87, -124);
+  ctx.bezierCurveTo(-84, -108, -75, -98, -62, -95);
+  ctx.bezierCurveTo(-40, -88, 10, -81, 40, -85);
+  ctx.bezierCurveTo(58, -87, 72, -100, 77, -118);
+  ctx.bezierCurveTo(80, -132, 74, -146, 62, -156);
+  ctx.bezierCurveTo(50, -165, 38, -167, 24, -163);
+  ctx.bezierCurveTo(6, -155, -20, -155, -36, -158);
+  ctx.bezierCurveTo(-46, -162, -54, -164, -62, -162);
   ctx.closePath();
 }
 
 function drawBody(ctx, coat) {
-  const g = ctx.createLinearGradient(0, -162, 0, -86);
-  g.addColorStop(0, shade(coat.body, 0.1));
-  g.addColorStop(0.55, coat.body);
+  const g = ctx.createLinearGradient(0, -166, 0, -82);
+  g.addColorStop(0, shade(coat.body, 0.12));
+  g.addColorStop(0.5, coat.body);
   g.addColorStop(1, coat.shade);
   bodyPath(ctx);
   ctx.fillStyle = g;
   ctx.fill();
-  // 筋肉の盛り上がりに光を当てて立体感を出す
   ctx.save();
   bodyPath(ctx);
   ctx.clip();
-  for (const [x, y, r] of [[-52, -134, 32], [50, -128, 26]]) {
-    const hl = ctx.createRadialGradient(x - 6, y - 10, 2, x, y, r);
-    hl.addColorStop(0, 'rgba(255,255,255,0.22)');
-    hl.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = hl;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
-  }
+  // 尻と肩の筋肉に光を当て、腹の下を暗くして丸みを出す
+  glow(ctx, -60, -140, 36, 'rgba(255,255,255,0.24)');
+  glow(ctx, 50, -136, 28, 'rgba(255,255,255,0.2)');
+  glow(ctx, -4, -80, 46, 'rgba(0,0,0,0.3)');
+  drawMuscleLines(ctx);
   if (coat.dapple) drawDapples(ctx);
   ctx.restore();
+}
+
+function glow(ctx, x, y, r, color) {
+  const g = ctx.createRadialGradient(x - r * 0.2, y - r * 0.3, 1, x, y, r);
+  g.addColorStop(0, color);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(x - r, y - r, r * 2, r * 2);
+}
+
+// 肩甲骨の線・脇腹のくぼみ・背中の照り返しを薄く重ねる
+function drawMuscleLines(ctx) {
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.09)';
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.moveTo(30, -160);
+  ctx.quadraticCurveTo(46, -132, 66, -116);
+  ctx.moveTo(-48, -98);
+  ctx.quadraticCurveTo(-40, -116, -46, -134);
+  ctx.moveTo(-6, -92);
+  ctx.quadraticCurveTo(14, -100, 30, -96);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-78, -150);
+  ctx.bezierCurveTo(-62, -163, -46, -160, -34, -156);
+  ctx.bezierCurveTo(-18, -152, 6, -152, 22, -160);
+  ctx.stroke();
 }
 
 function drawDapples(ctx) {
@@ -121,61 +241,84 @@ function drawDapples(ctx) {
   }
 }
 
+// 3次ベジェ曲線上の点。たてがみの毛を首すじに沿って並べるのに使う
+function bezierPoint(p, t) {
+  const u = 1 - t;
+  const w = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t];
+  return { x: w.reduce((s, k, i) => s + k * p[i][0], 0), y: w.reduce((s, k, i) => s + k * p[i][1], 0) };
+}
+
+const CREST = [[18, -160], [40, -178], [66, -198], [96, -207]];
+
 function drawNeckHead(ctx, coat, markings) {
-  const g = ctx.createLinearGradient(30, -200, 110, -120);
-  g.addColorStop(0, shade(coat.body, 0.08));
-  g.addColorStop(0.7, coat.body);
-  g.addColorStop(1, shade(coat.body, -0.08));
+  const g = ctx.createLinearGradient(40, -206, 100, -130);
+  g.addColorStop(0, shade(coat.body, 0.1));
+  g.addColorStop(0.6, coat.body);
+  g.addColorStop(1, shade(coat.body, -0.1));
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.moveTo(26, -150);
-  ctx.quadraticCurveTo(58, -188, 96, -198);
-  ctx.lineTo(114, -176);
-  ctx.quadraticCurveTo(92, -140, 74, -114);
+  ctx.moveTo(...CREST[0]);
+  ctx.bezierCurveTo(...CREST[1], ...CREST[2], ...CREST[3]);
+  ctx.lineTo(108, -178);
+  ctx.bezierCurveTo(96, -152, 86, -132, 77, -116);
+  ctx.lineTo(56, -130);
   ctx.closePath();
   ctx.fill();
+  headPath(ctx);
   ctx.fillStyle = coat.body;
-  ctx.beginPath();
-  ctx.moveTo(92, -200);
-  ctx.quadraticCurveTo(104, -210, 116, -200);
-  ctx.lineTo(148, -167);
-  ctx.quadraticCurveTo(151, -156, 140, -153);
-  ctx.lineTo(118, -159);
-  ctx.quadraticCurveTo(106, -166, 102, -178);
-  ctx.closePath();
   ctx.fill();
+  ctx.save();
+  headPath(ctx);
+  ctx.clip();
+  // ほお骨の丸みと、鼻すじに向かって細くなる顔の立体感
+  glow(ctx, 112, -178, 14, 'rgba(255,255,255,0.22)');
+  glow(ctx, 140, -158, 12, 'rgba(0,0,0,0.25)');
+  ctx.restore();
   drawFaceDetails(ctx, coat, markings);
+}
+
+function headPath(ctx) {
+  ctx.beginPath();
+  ctx.moveTo(94, -206);
+  ctx.bezierCurveTo(100, -213, 108, -211, 114, -203);
+  ctx.bezierCurveTo(124, -192, 138, -178, 147, -168);
+  ctx.bezierCurveTo(151, -163, 149, -155, 142, -154);
+  ctx.bezierCurveTo(138, -153, 134, -156, 130, -158);
+  ctx.bezierCurveTo(124, -160, 120, -160, 116, -164);
+  ctx.bezierCurveTo(106, -162, 100, -172, 104, -182);
+  ctx.lineTo(96, -196);
+  ctx.closePath();
 }
 
 function drawFaceDetails(ctx, coat, markings) {
   ctx.fillStyle = coat.shade;
   ctx.beginPath();
-  ctx.moveTo(97, -202);
-  ctx.lineTo(99, -220);
-  ctx.lineTo(108, -204);
+  ctx.moveTo(98, -206);
+  ctx.quadraticCurveTo(97, -218, 101, -225);
+  ctx.quadraticCurveTo(107, -214, 108, -206);
   ctx.closePath();
   ctx.fill();
   if (markings?.face && markings.face !== 'none') drawBlaze(ctx, markings.face);
   ctx.fillStyle = '#0d0907';
   ctx.beginPath();
-  ctx.ellipse(115, -190, 3.4, 2.6, 0.6, 0, TAU);
+  ctx.ellipse(115, -193, 3.4, 2.5, 0.7, 0, TAU);
   ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  dot(ctx, { x: 116, y: -194 }, 0.9);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
   ctx.beginPath();
-  ctx.arc(116, -191, 0.9, 0, TAU);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.beginPath();
-  ctx.ellipse(141, -162, 3, 2, 0.8, 0, TAU);
+  ctx.ellipse(143, -164, 3, 2, 0.8, 0, TAU);
   ctx.fill();
   // 頭絡（とうらく）＝顔につける馬具。描くと一気に競走馬らしくなる
   ctx.strokeStyle = 'rgba(20,14,10,0.85)';
   ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.moveTo(104, -203);
-  ctx.lineTo(112, -170);
-  ctx.moveTo(122, -174);
-  ctx.lineTo(136, -160);
+  ctx.moveTo(104, -205);
+  ctx.lineTo(114, -166);
+  ctx.moveTo(124, -180);
+  ctx.lineTo(136, -165);
+  ctx.moveTo(138, -156);
+  ctx.lineTo(132, -159);
   ctx.stroke();
 }
 
@@ -183,45 +326,53 @@ function drawBlaze(ctx, face) {
   ctx.fillStyle = '#f6f3ec';
   ctx.beginPath();
   if (face === 'star') {
-    ctx.ellipse(109, -196, 4, 3, 0.7, 0, TAU);
+    ctx.ellipse(110, -199, 4, 3, 0.7, 0, TAU);
   } else {
     const w = face === 'blaze' ? 6 : 3;
-    ctx.moveTo(106, -200);
-    ctx.lineTo(112, -202);
-    ctx.lineTo(143 + w * 0.3, -164);
-    ctx.lineTo(137 - w, -160);
+    ctx.moveTo(107, -204);
+    ctx.lineTo(113, -206);
+    ctx.lineTo(146 + w * 0.3, -168);
+    ctx.lineTo(140 - w, -162);
     ctx.closePath();
   }
   ctx.fill();
 }
 
+// たてがみは首すじに沿って細い毛を並べ、走るときは風で後ろへなびかせる
 function drawMane(ctx, coat, phase, pose) {
+  const run = pose !== 'stand';
   ctx.strokeStyle = coat.mane;
   ctx.lineCap = 'round';
-  const wave = pose === 'stand' ? Math.sin(phase * TAU) * 1.5 : Math.sin(phase * TAU * 2) * 4;
-  for (let i = 0; i < 9; i += 1) {
-    const t = i / 8;
-    const x = 30 + t * 64;
-    const y = -156 - t * 40 + Math.sin(t * Math.PI) * -6;
-    ctx.lineWidth = 7 - t * 3;
+  ctx.lineWidth = 2.6;
+  for (let i = 0; i < 16; i += 1) {
+    const t = i / 15;
+    const p = bezierPoint(CREST, t);
+    const wave = Math.sin(phase * TAU * (run ? 2 : 1) + i * 0.9) * (run ? 4 : 1.2);
+    const len = 14 + Math.sin(t * Math.PI) * 6;
+    ctx.globalAlpha = 0.75 + (i % 3) * 0.1;
     ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.quadraticCurveTo(x - 10, y - 2 + wave, x - 18 - wave, y + 8);
+    ctx.moveTo(p.x, p.y);
+    if (run) ctx.quadraticCurveTo(p.x - len * 0.5, p.y - 6 + wave, p.x - len, p.y - 2 + wave);
+    else ctx.quadraticCurveTo(p.x - 6, p.y + 2, p.x - 8 + wave, p.y + len * 0.7);
     ctx.stroke();
   }
+  ctx.globalAlpha = 1;
 }
 
+// 尻尾は毛束を何本も重ね、走るときは後ろへ流れ、止まると垂れ下がる
 function drawTail(ctx, coat, phase, pose) {
-  const swing = pose === 'stand' ? Math.sin(phase * TAU) * 6 : Math.sin(phase * TAU) * 10;
-  const lift = pose === 'stand' ? 0 : 22;
+  const run = pose !== 'stand';
   ctx.strokeStyle = coat.mane;
   ctx.lineCap = 'round';
-  for (let i = 0; i < 6; i += 1) {
-    ctx.globalAlpha = 0.55 + i * 0.07;
-    ctx.lineWidth = 9 - i;
+  for (let i = 0; i < 12; i += 1) {
+    const spread = (i - 5.5) * (run ? 2.2 : 1.4);
+    const swing = Math.sin(phase * TAU + i * 0.35) * (run ? 7 : 3);
+    ctx.globalAlpha = 0.5 + (i % 4) * 0.12;
+    ctx.lineWidth = i < 4 ? 5 : 3;
     ctx.beginPath();
-    ctx.moveTo(-80, -140);
-    ctx.bezierCurveTo(-100, -142 + lift * 0.3, -116 - i * 2, -118 + swing - lift, -112 - i * 3 + swing, -70 - lift + i * 3);
+    ctx.moveTo(-82, -152);
+    if (run) ctx.bezierCurveTo(-104, -156, -124, -146 + spread + swing, -150 - Math.abs(spread), -130 + spread * 1.6 + swing);
+    else ctx.bezierCurveTo(-96, -146, -100 + spread, -110, -96 + spread + swing, -66 + Math.abs(spread));
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
@@ -323,20 +474,23 @@ function drawSaddleCloth(ctx, number, frame) {
 export function drawHorse(ctx, opts) {
   const coat = coatById(opts.coat);
   const pose = opts.pose ?? 'gallop';
-  const phase = opts.phase ?? 0;
+  const phase = ((opts.phase ?? 0) % 1 + 1) % 1;
   const socks = opts.markings?.socks ?? [false, false, false, false];
-  const bob = pose === 'stand' ? Math.sin(phase * TAU) * 0.8 : -Math.cos(phase * TAU) * 5;
+  const stand = pose === 'stand';
+  const angles = LEGS.map((l) => (stand ? l.stand : gallopAngles(l, phase)));
+  const lift = stand ? STAND_GROUND + Math.sin(phase * TAU) * 0.8 : groundAt(phase);
   ctx.save();
   ctx.translate(opts.x, opts.y);
   ctx.scale(opts.scale, opts.scale);
   drawShadow(ctx, pose);
-  ctx.translate(0, bob);
-  if (pose !== 'stand') ctx.rotate(Math.sin(phase * TAU + 1) * 0.035);
-  GALLOP_LEGS.filter((l) => !l.near).forEach((l, i) => drawLeg(ctx, l, legPose(l, phase, pose), coat, socks[i], true));
+  ctx.translate(0, lift);
+  if (!stand) ctx.rotate(Math.sin(phase * TAU + 1) * 0.025);
+  // 脚の付け根は胴に隠れるよう、脚（奥→手前の順）を先に描いてから胴を重ねる
+  LEGS.forEach((l, i) => { if (!l.near) drawLeg(ctx, l, angles[i], coat, socks[l.sock], true); });
+  LEGS.forEach((l, i) => { if (l.near) drawLeg(ctx, l, angles[i], coat, socks[l.sock], false); });
   drawTail(ctx, coat, phase, pose);
   drawBody(ctx, coat);
   drawHeadGroup(ctx, coat, opts.markings, phase, pose);
-  GALLOP_LEGS.filter((l) => l.near).forEach((l, i) => drawLeg(ctx, l, legPose(l, phase, pose), coat, socks[i + 2], false));
   if (opts.number != null) drawSaddleCloth(ctx, opts.number, opts.frame);
   if (opts.silks) drawJockey(ctx, opts.silks, FRAME_COLORS[Math.max(0, (opts.frame ?? 1) - 1)], phase, opts.whip);
   ctx.restore();
@@ -353,8 +507,8 @@ function drawShadow(ctx, pose) {
 }
 
 function drawHeadGroup(ctx, coat, markings, phase, pose) {
-  // 首は肩を支点に回す。走るときは首を前後に振り、立つときは首を上げる
-  const angle = pose === 'stand' ? -0.28 + Math.sin(phase * TAU * 0.5) * 0.02 : Math.sin(phase * TAU + 0.6) * 0.07;
+  // 首は肩を支点に回す。走るときは首を前へ伸ばし、前脚が着地している間に下がり、宙に浮くと上がる
+  const angle = pose === 'stand' ? -0.28 + Math.sin(phase * TAU * 0.5) * 0.02 : 0.32 + Math.cos(TAU * (phase - 0.78)) * 0.07;
   ctx.save();
   ctx.translate(50, -140);
   ctx.rotate(angle);
