@@ -1,5 +1,5 @@
 // データやコードを更新したら必ずこの番号を上げる（端末に古い版が残らないように）
-const CACHE_NAME = 'turf-lineage-v6';
+const CACHE_NAME = 'turf-lineage-v7';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/main.js', 'js/util.js', 'js/bloodline.js', 'js/horse.js', 'js/horse-art.js', 'js/training.js', 'js/race-data.js',

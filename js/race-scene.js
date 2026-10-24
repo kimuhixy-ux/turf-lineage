@@ -283,6 +283,23 @@ export function drawStartGate(ctx, scene, toScreen, ppm, open) {
   }
 }
 
+// ゲートの枠の横壁。馬の手前に描いて胴を隠さないと、同じ立ち姿の馬が紙の束のように重なって見える
+export function drawGateStalls(ctx, toScreen, ppm, y, s) {
+  const x0 = toScreen(0) - ppm * 3.2;
+  const x1 = toScreen(0) + ppm * 0.3;
+  if (x1 < 0 || x0 > ctx.canvas.width) return;
+  const top = y - 128 * s;
+  const g = ctx.createLinearGradient(0, top, 0, y);
+  g.addColorStop(0, '#4fa873');
+  g.addColorStop(1, '#245c3a');
+  ctx.fillStyle = g;
+  ctx.fillRect(x0, top, x1 - x0, y - top + 6 * s);
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(x0, top, x1 - x0, 5 * s);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  for (let x = x0 + ppm * 0.8; x < x1; x += ppm * 0.8) ctx.fillRect(x, top, 3 * s, y - top);
+}
+
 export function drawOuterRail(ctx, scene, toScreen, ppm, distance, W, t) {
   const y = scene.layout.trackBottom + 26;
   const h = Math.max(16, ppm * 1.3);

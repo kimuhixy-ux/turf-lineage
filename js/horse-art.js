@@ -30,7 +30,9 @@ function toPath(flat) {
 function buildFrame(f) {
   const body = new Path2D();
   f.outline.forEach((o) => body.addPath(toPath(o)));
-  const legs = f.legs.map((l) => l && { point: toPath(l.point), sock: toPath(l.sock), tip: { x: l.tip[0], y: l.tip[1] } });
+  const legs = f.legs.map((l) => l && {
+    point: toPath(l.point), sock: toPath(l.sock), tip: { x: l.tip[0], y: l.tip[1] }, far: l.far && toPath(l.far),
+  });
   return { ...f, body, legs, tail: toPath(f.tail) };
 }
 
@@ -80,6 +82,15 @@ const DAPPLES = Array.from({ length: 24 }, (_, i) => ({ x: ((i * 37) % 160) - 10
 function drawDapples(ctx, f) {
   ctx.fillStyle = 'rgba(255,255,255,0.2)';
   DAPPLES.forEach((p) => dot(ctx, { x: p.x, y: f.saddleY + p.y }, 5));
+}
+
+// 影絵では手前と奥の脚が同じ色になり平たく見えるので、奥の脚は胴の陰に入ったように暗くする
+function drawFarLegs(ctx, f) {
+  const g = ctx.createLinearGradient(0, f.saddleY + 70, 0, f.saddleY + 100);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.38)');
+  ctx.fillStyle = g;
+  f.legs.forEach((l) => { if (l?.far) ctx.fill(l.far); });
 }
 
 function drawPoints(ctx, f, coat, socks) {
@@ -140,11 +151,31 @@ function drawBlaze(ctx, face, at) {
   ctx.fill();
 }
 
-// 縁を内側から暗くすると、平らな影絵ではなく丸い体に見える
+// 縁を全周同じ濃さにすると紙の切り口に見えるので、光の向きに合わせて
+// 下向きの縁（腹・脚の後ろ）を暗く、上向きの縁（背・首すじ）を明るくする。
+// 線を上下にずらして輪郭で切り抜くと、片側の縁だけに線が残る
 function drawRim(ctx, f) {
-  ctx.strokeStyle = 'rgba(0,0,0,0.26)';
-  ctx.lineWidth = 7;
+  ctx.save();
+  ctx.translate(0, -6);
+  ctx.strokeStyle = 'rgba(0,0,0,0.24)';
+  ctx.lineWidth = 12;
   ctx.stroke(f.body);
+  ctx.translate(0, 4);
+  ctx.strokeStyle = 'rgba(0,0,0,0.16)';
+  ctx.lineWidth = 4;
+  ctx.stroke(f.body);
+  ctx.translate(0, 5);
+  ctx.strokeStyle = 'rgba(255,244,226,0.32)';
+  ctx.lineWidth = 4;
+  ctx.stroke(f.body);
+  ctx.restore();
+}
+
+// 奥のレーンの馬は手前の馬の陰に入るので少し暗くし、重なっても前後が分かるようにする
+function drawDepth(ctx, depth) {
+  if (depth == null || depth >= 1) return;
+  ctx.fillStyle = `rgba(24,18,14,${((1 - depth) * 0.22).toFixed(3)})`;
+  ctx.fillRect(-300, -300, 600, 320);
 }
 
 // たてがみは首すじの線に沿って太く塗り、毛先を走るときは後ろへ、止まると下へ流す
@@ -213,6 +244,13 @@ function drawJockey(ctx, silks, cap, phase, whip) {
   ctx.fill();
   ctx.clip();
   silksPattern(ctx, silks);
+  // 勝負服も平らに塗ると切り絵に見えるので、背中を明るく腹側を暗くして丸みを出す
+  const g = ctx.createLinearGradient(14, -202, 20, -178);
+  g.addColorStop(0, 'rgba(255,255,255,0.3)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = g;
+  ctx.fillRect(-10, -204, 56, 28);
   ctx.restore();
   ctx.strokeStyle = silks.sleeve ?? silks.main;
   ctx.lineWidth = 6;
@@ -257,7 +295,7 @@ function drawSaddleCloth(ctx, number, frame) {
 
 /**
  * opts: { x, y, scale, phase, coat(id), markings, pose: 'gallop'|'stand',
- *         silks, number, frame, alpha, whip }
+ *         silks, number, frame, alpha, whip, depth(0=奥〜1=手前) }
  */
 export function drawHorse(ctx, opts) {
   const coat = coatById(opts.coat);
@@ -272,9 +310,11 @@ export function drawHorse(ctx, opts) {
   ctx.save();
   ctx.clip(f.body, 'evenodd');
   drawCoat(ctx, f, coat);
+  drawFarLegs(ctx, f);
   drawPoints(ctx, f, coat, socks);
   drawFace(ctx, f, opts.markings);
   drawRim(ctx, f);
+  drawDepth(ctx, opts.depth);
   ctx.restore();
   drawMane(ctx, f, coat, pose === 'stand');
   // 騎手とゼッケンは背中の高さ -155 を基準に描いてあるので、コマごとの背中の高さへずらす

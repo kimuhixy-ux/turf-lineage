@@ -3,7 +3,7 @@ import { drawHorse, FRAME_COLORS } from './horse-art.js';
 import { COURSES } from './race-data.js';
 import {
   PALETTES, buildScene, drawBackdrop, drawInfield, drawTrack, drawInnerRail,
-  drawStartGate, drawOuterRail, drawRain, drawGrade,
+  drawStartGate, drawGateStalls, drawOuterRail, drawRain, drawGrade,
 } from './race-scene.js';
 
 const LANES = 10;
@@ -181,10 +181,12 @@ export class RaceView {
       const y = this.laneY(r.lane);
       const remain = this.sim.race.distance - r.pos;
       drawHorse(ctx, {
-        x, y, scale, phase: r.anim, coat: r.horse.coat, markings: r.horse.markings,
+        x, y, scale, depth, phase: r.anim, coat: r.horse.coat, markings: r.horse.markings,
         pose: started || r.v > 0.5 ? 'gallop' : 'stand', silks: r.silks, number: r.number, frame: r.frame,
         whip: remain < 300 && !r.done && Math.sin(this.wall * 8) > 0.6,
       });
+      // 枠ごとの横壁を各馬の直後に描くと、奥の枠の馬ほど頭と騎手だけがのぞく
+      drawGateStalls(ctx, toScreen, this.ppm, y + 4, scale);
       if (r.isPlayer) this.drawMarker(ctx, x + 40 * scale, y - 250 * scale, r.name);
       if (started && r.v > 8) this.spawnParticles(r, y);
     }
