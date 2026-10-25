@@ -1,5 +1,5 @@
 import { rand, randInt, pick, clamp, gauss } from './util.js';
-import { STAT_KEYS, SKILL_KEYS, growthGain, statCeiling, isDeclining } from './horse.js';
+import { STAT_KEYS, SKILL_KEYS, RATING_WEIGHTS, growthGain, statCeiling, isDeclining } from './horse.js';
 
 export const INTENSITY = {
   easy: { label: '馬なり', gain: 0.6, fatigue: 0.55, risk: 0.4 },
@@ -84,6 +84,63 @@ export function applyTraining(h, menu, intensityId, year) {
   weeklyDrift(h, year);
   const injured = rollInjury(h, menu, it);
   return { deltas: diff(before, h), injured, cost: menu.cost ?? 0 };
+}
+
+export const AUTO_MENU_ID = 'auto';
+// 疲労50を超えると故障しやすくなるので、おまかせはその手前で止める
+const AUTO_FATIGUE_LIMIT = 50;
+const AUTO_MAX_COST = 30;
+const AUTO_SKILL_WEIGHT = 0.05;
+// 故障1回で失う調教の量（軽傷の療養数週＋まれな重傷）をおおまかに見積もった値
+const INJURY_LOSS = 3;
+
+// 総合評価の重みを土台に、得意な距離で効く能力を少し重くする
+function autoWeights(h) {
+  const w = { ...RATING_WEIGHTS };
+  const mid = (h.dist[0] + h.dist[1]) / 2;
+  if (mid >= 2200) w.stamina += 0.1;
+  else if (mid <= 1400) w.speed += 0.06;
+  return w;
+}
+
+// applyTraining と同じ式で、その週に伸びる量を重みつきで見積もる
+function expectedGain(h, menu, it, year, w) {
+  const mult = it.gain * growthGain(h, year) * conditionMult(h) * (h.fatigue > 65 ? 0.65 : 1);
+  let value = 0;
+  for (const [key, base] of Object.entries(menu.gains ?? {})) {
+    if (SKILL_KEYS.includes(key)) value += base * mult * (1 - h.skills[key] / 110) * AUTO_SKILL_WEIGHT;
+    else if (base < 0) value += base * 0.6 * w[key];
+    else {
+      const ceiling = statCeiling(h, key, year);
+      value += base * mult * (Math.max(0, ceiling - h.stats[key]) / Math.max(ceiling, 1)) * GAIN_SCALE * w[key];
+    }
+  }
+  return value;
+}
+
+// 疲れは放牧1週(-25)で抜く前提で「1週あたりの伸び」に直し、故障の見込み損も引く
+function autoScore(h, menu, intensityId, year, w) {
+  const it = INTENSITY[intensityId];
+  const fatigue = menu.fatigue * it.fatigue;
+  const after = h.fatigue + fatigue;
+  if (after > AUTO_FATIGUE_LIMIT) return -Infinity;
+  const injuryP = (menu.risk ?? 0) * it.risk * (1 + Math.max(0, after - 50) / 15) * (1.25 - h.stats.flex / 200);
+  return expectedGain(h, menu, it, year, w) / (1 + fatigue / 25) - injuryP * INJURY_LOSS;
+}
+
+export function chooseAutoTraining(h, menus, year) {
+  const paddock = menus.find((m) => m.id === 'paddock');
+  if (h.fatigue >= 45 || h.condition < 30) return { menu: paddock, intensity: 'normal' };
+  const w = autoWeights(h);
+  let best = { menu: paddock, intensity: 'normal', score: 0 };
+  for (const menu of menus) {
+    if (menu.fatigue <= 0 || (menu.cost ?? 0) > AUTO_MAX_COST) continue;
+    for (const intensity of menu.noIntensity ? ['normal'] : Object.keys(INTENSITY)) {
+      const score = autoScore(h, menu, intensity, year, w);
+      if (score > best.score) best = { menu, intensity, score };
+    }
+  }
+  return best;
 }
 
 // 故障中・当歳馬など、調教できない馬の1週間

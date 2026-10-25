@@ -2,7 +2,7 @@ import { rand, randInt, pick, clamp, gauss, uid, monthOf, WEEKS_PER_YEAR } from 
 import {
   STAT_KEYS, grownHorse, randomDam, breedFoal, horseAge, horseClass, overallRating, makeName,
 } from './horse.js';
-import { applyTraining, applyRest, applyRaceAftermath } from './training.js';
+import { applyTraining, applyRest, applyRaceAftermath, chooseAutoTraining, AUTO_MENU_ID, INTENSITY } from './training.js';
 import { createBloodbook, diagnose, breedingRecord, joinPed } from './bloodline.js';
 import { racesForWeek, npcHorse, weatherFor } from './race-data.js';
 
@@ -229,15 +229,28 @@ export function applyRaceResults(state, race, results) {
   return out;
 }
 
+// おまかせのときは、その週に選んだメニューと強さを名前に出して調教の参考にできるようにする
+export function trainingPlan(h, data, year) {
+  if (h.train.menuId === AUTO_MENU_ID) {
+    const { menu, intensity } = chooseAutoTraining(h, data.trainings, year);
+    const it = menu.noIntensity ? '' : `・${INTENSITY[intensity].label}`;
+    return { menu, intensity, label: `おまかせ：${menu.name}${it}` };
+  }
+  const menu = data.trainings.find((m) => m.id === h.train.menuId) ?? data.trainings[0];
+  return { menu, intensity: h.train.intensity, label: menu.name };
+}
+
 export function runTrainingWeek(state, data) {
   const reports = [];
   for (const h of state.horses) {
     if (h.entry) continue;
     const age = horseAge(h, state.year);
-    const menu = data.trainings.find((m) => m.id === h.train.menuId) ?? data.trainings[0];
     let rep;
     if (age < 1 || h.injury) rep = { ...applyRest(h, state.year), menu: h.injury ? '故障療養' : '牧場で成長中' };
-    else rep = { ...applyTraining(h, menu, h.train.intensity, state.year), menu: menu.name };
+    else {
+      const plan = trainingPlan(h, data, state.year);
+      rep = { ...applyTraining(h, plan.menu, plan.intensity, state.year), menu: plan.label };
+    }
     state.money -= rep.cost;
     reports.push({ horse: h, ...rep });
   }

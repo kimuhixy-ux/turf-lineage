@@ -183,9 +183,10 @@ export function grownHorse({ sire, dam, year, age, names, diag, sex }) {
   return h;
 }
 
+export const RATING_WEIGHTS = { speed: 0.24, stamina: 0.14, power: 0.14, burst: 0.18, guts: 0.1, wisdom: 0.1, flex: 0.1 };
+
 export function overallRating(stats) {
-  const w = { speed: 0.24, stamina: 0.14, power: 0.14, burst: 0.18, guts: 0.1, wisdom: 0.1, flex: 0.1 };
-  return STAT_KEYS.reduce((sum, k) => sum + stats[k] * w[k], 0);
+  return STAT_KEYS.reduce((sum, k) => sum + stats[k] * RATING_WEIGHTS[k], 0);
 }
 
 export function conditionLabel(c) {

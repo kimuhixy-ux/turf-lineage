@@ -1,8 +1,8 @@
 import { el, formatMoney, formatDate } from './util.js';
 import { STYLES, GROWTH_LABELS, horseAge, horseClass, overallRating, gradeOf } from './horse.js';
-import { INTENSITY } from './training.js';
+import { INTENSITY, AUTO_MENU_ID } from './training.js';
 import { entryBlocker } from './race-data.js';
-import { weekRaces, retireHorse, renameHorse, bloodbook } from './game.js';
+import { weekRaces, retireHorse, renameHorse, bloodbook, trainingPlan } from './game.js';
 import { findCrosses } from './bloodline.js';
 import {
   openSheet, confirmSheet, toast, paddockPortrait, horseThumb, radarChart, statBars, skillBars, meter,
@@ -14,9 +14,10 @@ export function planText(h, state, data) {
   if (age < 1) return '母のそばで成長中';
   if (h.injury) return `故障療養中（${h.injury.name}・あと${h.injury.weeks}週）`;
   if (h.entry) return `出走：${h.entry.raceName}（${h.entry.style}）`;
-  const menu = data.trainings.find((m) => m.id === h.train.menuId);
-  const it = menu?.noIntensity ? '' : `・${INTENSITY[h.train.intensity].label}`;
-  return `調教：${menu?.name ?? '-'}${it}`;
+  const plan = trainingPlan(h, data, state.year);
+  const it = plan.menu.noIntensity ? '' : `・${INTENSITY[plan.intensity].label}`;
+  if (h.train.menuId === AUTO_MENU_ID) return `調教：おまかせ（今週は ${plan.menu.name}${it}）`;
+  return `調教：${plan.menu.name}${it}`;
 }
 
 function horseCard(h, ctx) {
@@ -186,6 +187,16 @@ function gainTags(menu) {
   return tags;
 }
 
+function autoCard(h, close, refresh) {
+  return el('button', {
+    class: `menu-card${h.train.menuId === AUTO_MENU_ID ? ' is-on' : ''}`,
+    onclick: () => { h.train.menuId = AUTO_MENU_ID; h.entry = null; close(); refresh(); },
+  }, [
+    el('b', { text: 'おまかせ' }),
+    el('span', { class: 'small', text: '疲労・調子・能力の伸びしろを見て、毎週いちばん効率のよいメニューと強さを選びます。選んだメニューは週の結果に出ます。' }),
+  ]);
+}
+
 function openTrainingPicker(h, ctx) {
   const { data, refresh } = ctx;
   const cats = [...new Set(data.trainings.map((m) => m.cat))];
@@ -197,6 +208,7 @@ function openTrainingPicker(h, ctx) {
     const menus = data.trainings.filter((m) => m.cat === cat);
     body.replaceChildren(
       el('p', { class: 'muted small', text: `${h.name}　疲労 ${Math.round(h.fatigue)}　${h.fatigue > 65 ? '※疲れているので休養かケアがおすすめ' : ''}` }),
+      autoCard(h, () => close(), refresh),
       el('div', { class: 'chip-tabs' }, cats.map((c) => el('button', { class: c === cat ? 'is-on' : '', text: c, onclick: () => { cat = c; draw(); } }))),
       el('h4', { text: '強さ' }),
       segmented(Object.entries(INTENSITY).map(([id, v]) => [id, v.label]), h.train.intensity, (v) => { h.train.intensity = v; draw(); }),
