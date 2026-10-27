@@ -2,7 +2,7 @@ import { el, formatMoney, formatDate } from './util.js';
 import { STYLES, GROWTH_LABELS, horseAge, horseClass, overallRating, gradeOf } from './horse.js';
 import { INTENSITY, AUTO_MENU_ID } from './training.js';
 import { entryBlocker } from './race-data.js';
-import { weekRaces, retireHorse, renameHorse, bloodbook, trainingPlan } from './game.js';
+import { weekRaces, retireHorse, renameHorse, bloodbook, trainingPlan, qualifiesAsMare } from './game.js';
 import { findCrosses } from './bloodline.js';
 import {
   openSheet, confirmSheet, toast, paddockPortrait, horseThumb, radarChart, statBars, skillBars, meter,
@@ -133,7 +133,8 @@ function manageButtons(h, ctx) {
       } }),
     ]);
   };
-  const retire = () => confirmSheet(`${h.name}を引退させますか？${h.sex === '牝' ? '（繁殖牝馬として牧場に残ります）' : ''}`, '引退させる', () => {
+  const mareNote = qualifiesAsMare(h) ? '（繁殖牝馬として牧場に残ります）' : '（重賞を勝っていないので繁殖牝馬にはなりません）';
+  const retire = () => confirmSheet(`${h.name}を引退させますか？${h.sex === '牝' ? mareNote : ''}`, '引退させる', () => {
     const msg = retireHorse(state, h.id, true);
     toast(msg ?? `${h.name}が引退しました`);
     go({ tab: 'stable' });

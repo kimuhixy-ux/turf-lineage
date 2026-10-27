@@ -1,7 +1,7 @@
 import { el, formatMoney, formatDate } from './util.js';
 import { drawHorse } from './horse-art.js';
 import { PALETTES, buildScene, drawBackdrop, drawTrack, drawInnerRail, drawGrade } from './race-scene.js';
-import { newGame, loadGame, saveGame, runTrainingWeek, endWeek, migrateState } from './game.js';
+import { newGame, loadGame, saveGame, runTrainingWeek, endWeek, migrateState, releaseUnqualifiedMares } from './game.js';
 import { stopAnimations, animate, hiDpiCanvas, segmented, toast } from './ui-common.js';
 import { renderStable, renderHorse } from './ui-stable.js';
 import { runWeekRaces, showWeekReport, renderSchedule } from './ui-race.js';
@@ -109,6 +109,7 @@ function renderNewGame() {
 
 function start(s, firstView = { tab: 'stable' }) {
   state = migrateState(s, data);
+  releaseUnqualifiedMares(state);
   view = firstView;
   saveGame(state);
   render();

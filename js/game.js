@@ -127,12 +127,24 @@ export function breedMare(state, data, mareId, sireId) {
   return null;
 }
 
+// 重賞を勝った牝馬だけを繁殖に上げる。レースに出ていない基礎の牝馬（record なし）はそのまま残す
+export function qualifiesAsMare(h) {
+  return !h.record || h.record.gradedWins > 0;
+}
+
+// 旧ルールで入った重賞未勝利の牝馬を外す。受胎中の馬は仔が生まれてから外す
+export function releaseUnqualifiedMares(state) {
+  const released = state.mares.filter((m) => !qualifiesAsMare(m) && !m.bred);
+  state.mares = state.mares.filter((m) => !released.includes(m));
+  return released.map((m) => m.name);
+}
+
 export function retireHorse(state, horseId, toBreeding) {
   const i = state.horses.findIndex((h) => h.id === horseId);
   if (i < 0) return;
   const [h] = state.horses.splice(i, 1);
   state.history.push({ name: h.name, sex: h.sex, sireName: h.sireName, record: h.record, retiredYear: state.year, coat: h.coat });
-  if (toBreeding && h.sex === '牝') {
+  if (toBreeding && h.sex === '牝' && qualifiesAsMare(h)) {
     state.mares.push({ ...makeMare({ ...h, surface: h.apt.turf >= h.apt.dirt ? 'turf' : 'dirt' }), stats: { ...h.potential }, record: h.record });
   }
   const g1 = h.record.titles.filter((t) => t.grade === 'G1').length;
@@ -273,6 +285,7 @@ function newYear(state, data) {
     events.push(`${mare.name}に${foal.sex === '牡' ? '牡馬' : '牝馬'}が誕生しました（父 ${sire.name}・${GROWTH_LABELS[foal.growth]}）`);
     mare.bred = null;
   }
+  for (const name of releaseUnqualifiedMares(state)) events.push(`${name}は重賞未勝利のため繁殖牝馬の登録を外れました`);
   for (const h of [...state.horses]) {
     if (horseAge(h, state.year) >= 8) {
       const msg = retireHorse(state, h.id, h.sex === '牝' && state.mares.length < 8);
