@@ -103,11 +103,25 @@ function chooseStyle(stats) {
   return '追込';
 }
 
+// 父の型60%・母の型25%・残り15%は3つの型から均等
+const GROWTH_FROM_SIRE = 0.6;
+const GROWTH_FROM_DAM = 0.25;
+const GROWTH_TYPES = ['early', 'normal', 'late'];
+
 function inheritGrowth(sire, dam) {
   const r = Math.random();
-  if (r < 0.6) return sire.growth;
-  if (r < 0.85) return dam.growth;
-  return pick(['early', 'normal', 'late']);
+  if (r < GROWTH_FROM_SIRE) return sire.growth;
+  if (r < GROWTH_FROM_SIRE + GROWTH_FROM_DAM) return dam.growth;
+  return pick(GROWTH_TYPES);
+}
+
+// 種付け前に産駒の成長型の見込みを見せるため、inheritGrowth と同じ割合で確率を出す
+export function growthOdds(sire, dam) {
+  const rest = (1 - GROWTH_FROM_SIRE - GROWTH_FROM_DAM) / GROWTH_TYPES.length;
+  const odds = Object.fromEntries(GROWTH_TYPES.map((g) => [g, rest]));
+  odds[sire.growth] += GROWTH_FROM_SIRE;
+  odds[dam.growth] += GROWTH_FROM_DAM;
+  return odds;
 }
 
 // 父と母（どちらも stats / dist / surface / growth / coat を持つ）から仔を作る

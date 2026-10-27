@@ -1,6 +1,6 @@
 import { rand, randInt, pick, clamp, gauss, uid, monthOf, WEEKS_PER_YEAR } from './util.js';
 import {
-  STAT_KEYS, grownHorse, randomDam, breedFoal, horseAge, horseClass, overallRating, makeName,
+  STAT_KEYS, GROWTH_LABELS, grownHorse, randomDam, breedFoal, horseAge, horseClass, overallRating, makeName,
 } from './horse.js';
 import { applyTraining, applyRest, applyRaceAftermath, chooseAutoTraining, AUTO_MENU_ID, INTENSITY } from './training.js';
 import { createBloodbook, diagnose, breedingRecord, joinPed } from './bloodline.js';
@@ -270,7 +270,7 @@ function newYear(state, data) {
     foal.damSire = mare.sireName;
     foal.breeding = breedingRecord(diag);
     state.horses.push(foal);
-    events.push(`${mare.name}に${foal.sex === '牡' ? '牡馬' : '牝馬'}が誕生しました（父 ${sire.name}）`);
+    events.push(`${mare.name}に${foal.sex === '牡' ? '牡馬' : '牝馬'}が誕生しました（父 ${sire.name}・${GROWTH_LABELS[foal.growth]}）`);
     mare.bred = null;
   }
   for (const h of [...state.horses]) {

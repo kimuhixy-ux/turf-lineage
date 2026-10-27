@@ -1,5 +1,5 @@
 import { el, formatMoney } from './util.js';
-import { STAT_KEYS, STAT_LABELS, GROWTH_LABELS, coatById, gradeOf, overallRating } from './horse.js';
+import { STAT_KEYS, STAT_LABELS, GROWTH_LABELS, coatById, gradeOf, overallRating, growthOdds } from './horse.js';
 import {
   allSires, auctionOpen, buyLot, breedMare, breedingSeason, deleteSave, BREEDING_WEEKS, AUCTION_WEEKS,
   bloodbook, breedingPlan,
@@ -17,9 +17,15 @@ function sireSummary(s) {
   return `${surfaceText(s.surface)}・${s.dist[0]}〜${s.dist[1]}m・${GROWTH_LABELS[s.growth]}・得意 ${best.join('/')}`;
 }
 
+function growthOddsText(sire, mare) {
+  const odds = Object.entries(growthOdds(sire, mare)).sort((a, b) => b[1] - a[1]);
+  return `産駒の成長型：${odds.map(([g, p]) => `${GROWTH_LABELS[g]}${Math.round(p * 100)}%`).join('・')}`;
+}
+
 function openPlanDetail(mare, sire, plan, book) {
   openSheet(`${sire.name} × ${mare.name}`, [
     el('p', {}, [rankChip(plan.rank), el('span', { class: 'muted small', text: ' 生まれる仔の血統表（★はクロス）' })]),
+    el('p', { class: 'small', text: growthOddsText(sire, mare) }),
     pedigreeTable(plan.ped, book, plan.crossNames),
     breedingNotes(plan.items),
   ]);
@@ -34,6 +40,7 @@ function sireRow(s, mare, ctx, book, onBreed) {
       rankChip(plan.rank),
       el('div', { class: 'muted small', text: `${s.line}・${coatById(s.coat).name}・${sireSummary(s)}` }),
       el('div', { class: 'small', text: s.desc }),
+      el('div', { class: 'small', text: growthOddsText(s, mare) }),
       el('div', { class: 'tags' }, plan.items.map((it) => el('span', { class: `tag${it.tone === 'good' ? '' : ' is-down'}`, text: it.title }))),
     ]),
     el('div', { class: 'btn-col' }, [

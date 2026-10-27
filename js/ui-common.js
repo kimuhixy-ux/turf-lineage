@@ -1,7 +1,7 @@
 import { el, clamp } from './util.js';
 import { drawHorse, FRAME_COLORS } from './horse-art.js';
 import {
-  STAT_KEYS, STAT_LABELS, SKILL_KEYS, SKILL_LABELS, gradeOf, conditionLabel, coatById, horseAge,
+  STAT_KEYS, STAT_LABELS, SKILL_KEYS, SKILL_LABELS, GROWTH_LABELS, gradeOf, conditionLabel, coatById, horseAge,
 } from './horse.js';
 
 const animations = new Set();
@@ -92,7 +92,7 @@ export function gradeBadge(grade) {
 
 export function horseSubtitle(h, year) {
   const age = horseAge(h, year);
-  return `${h.sex}${age}歳・${coatById(h.coat).name}・父 ${h.sireName}`;
+  return `${h.sex}${age}歳・${coatById(h.coat).name}・${GROWTH_LABELS[h.growth]}・父 ${h.sireName}`;
 }
 
 // 牧場の柵と芝生を背景に、立ち姿の馬をゆっくり動かして見せる
