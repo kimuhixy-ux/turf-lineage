@@ -80,20 +80,39 @@ function lotPrice(h, sire) {
 const FEATURED_FILLY_SIRE = 's02';
 const FEATURED_FILLY_RATE = 0.3;
 
+function makeLot(state, data, book, sire, age, sex) {
+  const dam = pedigreedDam(data, book);
+  const diag = breedingPlan(state, data, dam, sire, book);
+  const horse = grownHorse({ sire, dam, year: state.year, age, names: data.names, diag, sex });
+  horse.damSire = dam.sireName;
+  horse.breeding = breedingRecord(diag);
+  return { id: uid(), horse, price: lotPrice(horse, sire), sold: false };
+}
+
 function makeLots(state, data, age, count) {
   const sires = allSires(state, data);
   const book = bloodbook(state, data);
   const featured = sires.find((s) => s.id === FEATURED_FILLY_SIRE);
   return Array.from({ length: count }, () => {
     const isFeatured = featured && Math.random() < FEATURED_FILLY_RATE;
-    const sire = isFeatured ? featured : pick(sires);
-    const dam = pedigreedDam(data, book);
-    const diag = breedingPlan(state, data, dam, sire, book);
-    const horse = grownHorse({ sire, dam, year: state.year, age, names: data.names, diag, sex: isFeatured ? '牝' : undefined });
-    horse.damSire = dam.sireName;
-    horse.breeding = breedingRecord(diag);
-    return { id: uid(), horse, price: lotPrice(horse, sire), sold: false };
+    return makeLot(state, data, book, isFeatured ? featured : pick(sires), age, isFeatured ? '牝' : undefined);
   });
+}
+
+// 値だけ吊り上げると平凡な馬が億になるので、良血の候補から出来のよい1頭を選んで目玉にする
+const STAR_LOT_FEE = 3000;
+const STAR_LOT_CANDIDATES = 6;
+const STAR_LOT_PRICE = [10000, 50000];
+
+function makeStarLot(state, data) {
+  const all = allSires(state, data);
+  const top = all.filter((s) => s.fee >= STAR_LOT_FEE);
+  const sires = top.length ? top : all;
+  const book = bloodbook(state, data);
+  const candidates = Array.from({ length: STAR_LOT_CANDIDATES }, () => makeLot(state, data, book, pick(sires), 1));
+  const best = candidates.reduce((a, b) => (overallRating(b.horse.potential) > overallRating(a.horse.potential) ? b : a));
+  best.price = clamp(Math.round((best.price * 1.6) / 50) * 50, ...STAR_LOT_PRICE);
+  return best;
 }
 
 export function auctionOpen(state) {
@@ -310,7 +329,7 @@ export function endWeek(state, data) {
   state.week += 1;
   if (state.week > WEEKS_PER_YEAR) events.push(...newYear(state, data));
   if (state.week === AUCTION_WEEKS[0]) {
-    state.auction = { key: `y${state.year}`, lots: makeLots(state, data, 1, 8) };
+    state.auction = { key: `y${state.year}`, lots: [...makeLots(state, data, 1, 7), makeStarLot(state, data)] };
     events.push('1歳馬のセリ（7〜8月）が開かれています');
   }
   if (state.week === BREEDING_WEEKS[0] && state.mares.length) events.push('種付けシーズンが始まりました（5月末まで）');
