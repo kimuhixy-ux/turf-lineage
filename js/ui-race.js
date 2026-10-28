@@ -32,7 +32,7 @@ function showRaceCard(state, race, runners, ground) {
     const rows = runners.map((r) => el('tr', { class: r.isPlayer ? 'is-player' : '' }, [
       el('td', {}, frameBadge(r.frame, r.number)),
       el('td', { class: 'mark', text: r.mark }),
-      el('td', {}, [el('b', { text: r.name }), el('div', { class: 'muted small', text: `${r.horse.sex}${runnerAge(r, race, state.year)}・${r.style}` })]),
+      el('td', {}, [el('b', { text: r.name }), el('div', { class: 'muted small', text: `${r.horse.sex}${runnerAge(r, race, state.year)}・${r.style}${r.jockey ? `・${r.jockey.name}` : ''}` })]),
       el('td', { class: 'num', text: `${r.popularity}番人気` }),
       el('td', { class: 'num', text: r.odds.toFixed(1) }),
     ]));
@@ -91,7 +91,7 @@ function showResult(race, ground, results, outcomes) {
     node.append(el('div', { class: 'overlay-inner' }, [
       raceHeader(race, ground),
       resultHeadline(outcomes),
-      ...outcomes.map((o) => el('p', { class: 'small', text: `${o.horse.name}：${o.rank}着${o.prize ? `　賞金 ${formatMoney(o.prize)}（馬主取り分8割）` : ''}` })),
+      ...outcomes.map((o) => el('p', { class: 'small', text: `${o.horse.name}：${o.rank}着${o.prize ? `　賞金 ${formatMoney(o.prize)}（馬主取り分8割）` : ''}${o.fee ? `　騎乗料 ${formatMoney(o.fee)}（${o.jockey.name}）` : ''}` })),
       el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, [
         el('thead', {}, el('tr', {}, ['着', '番', '馬名', 'タイム', '着差', '人気'].map((t) => el('th', { text: t })))),
         el('tbody', {}, rows),

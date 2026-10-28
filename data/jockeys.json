@@ -1,0 +1,20 @@
+[
+  { "id": "j01", "name": "朝霧 颯", "skill": 95, "style": "差し", "surface": "turf", "fee": 200 },
+  { "id": "j02", "name": "鷹野 隼人", "skill": 92, "style": "先行", "surface": "turf", "fee": 180 },
+  { "id": "j03", "name": "九条 悠真", "skill": 90, "style": "追込", "surface": "turf", "fee": 160 },
+  { "id": "j04", "name": "鳴海 圭", "skill": 88, "style": "先行", "surface": "dirt", "fee": 140 },
+  { "id": "j05", "name": "白峰 透", "skill": 85, "style": "逃げ", "surface": "turf", "fee": 120 },
+  { "id": "j06", "name": "東雲 潤", "skill": 83, "style": "差し", "surface": "dirt", "fee": 100 },
+  { "id": "j07", "name": "天城 匠", "skill": 80, "style": "逃げ", "surface": "dirt", "fee": 80 },
+  { "id": "j08", "name": "氷室 拓海", "skill": 77, "style": "差し", "surface": "turf", "fee": 65 },
+  { "id": "j09", "name": "千早 翼", "skill": 74, "style": "追込", "surface": "dirt", "fee": 50 },
+  { "id": "j10", "name": "葛城 亮", "skill": 71, "style": "先行", "surface": "turf", "fee": 40 },
+  { "id": "j11", "name": "早瀬 迅", "skill": 68, "style": "逃げ", "surface": "turf", "fee": 32 },
+  { "id": "j12", "name": "真壁 航", "skill": 65, "style": "先行", "surface": "dirt", "fee": 26 },
+  { "id": "j13", "name": "柚木 蓮", "skill": 62, "style": "差し", "surface": "turf", "fee": 20 },
+  { "id": "j14", "name": "若宮 凛", "skill": 59, "style": "逃げ", "surface": "dirt", "fee": 16 },
+  { "id": "j15", "name": "一ノ瀬 奏", "skill": 56, "style": "追込", "surface": "turf", "fee": 13 },
+  { "id": "j16", "name": "七海 遥", "skill": 53, "style": "先行", "surface": "turf", "fee": 10 },
+  { "id": "j17", "name": "宮瀬 光", "skill": 50, "style": "差し", "surface": "dirt", "fee": 8 },
+  { "id": "j18", "name": "桐生 大和", "skill": 47, "style": "追込", "surface": "dirt", "fee": 6 }
+]

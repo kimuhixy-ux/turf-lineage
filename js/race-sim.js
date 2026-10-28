@@ -15,7 +15,13 @@ function distanceFit(range, distance) {
   return Math.max(0.94, 1 - (out / 200) * 0.008);
 }
 
-function profile(h, race, ground, style) {
+// 騎手の腕は名手でも1%足らずにとどめ、育てた馬の力を逆転させすぎないようにする
+export function jockeyBonus(j, race, style) {
+  if (!j) return 1;
+  return 1 + (j.skill - 60) * 0.00012 + (j.style === style ? 0.0025 : 0) + (j.surface === race.surface ? 0.002 : 0);
+}
+
+function profile(h, race, ground, style, jockey) {
   const s = h.stats;
   const surface = race.surface === 'turf' ? h.apt.turf : h.apt.dirt;
   const styleGap = Math.abs(STYLES.indexOf(h.style) - STYLES.indexOf(style));
@@ -25,6 +31,7 @@ function profile(h, race, ground, style) {
     * (0.984 + (h.condition / 100) * 0.024)
     * (1 - ground.level * 0.006 * (1.3 - s.power / 100))
     * (1 - styleGap * 0.01)
+    * jockeyBonus(jockey, race, style)
     * (1 + gauss() * 0.005);
   return {
     top: base * mult,
@@ -34,6 +41,8 @@ function profile(h, race, ground, style) {
     exhaust: 0.86 + s.guts * 0.0009,
     cornerCap: 0.968 + h.skills.corner * 0.00022 + s.flex * 0.00012,
     wisdom: s.wisdom, guts: s.guts, calm: h.skills.calm,
+    // うまい騎手ほど折り合いをつけて、かかりにくくする
+    hold: jockey ? 1.3 - jockey.skill / 100 : 1,
   };
 }
 
@@ -71,7 +80,7 @@ export class RaceSim {
   }
 
   prepare(r) {
-    r.p = profile(r.horse, this.race, this.ground, r.style);
+    r.p = profile(r.horse, this.race, this.ground, r.style, r.jockey);
     Object.assign(r, { pos: 0, v: 0, hp: r.p.hpMax, kakari: 0, kakariCount: 0, done: false, blocked: 0 });
     r.lane = (r.gate - 1) * 0.42;
     r.targetLane = r.lane;
@@ -169,7 +178,7 @@ export class RaceSim {
   maybeKakari(r) {
     const prog = r.pos / this.race.distance;
     if (r.kakariCount > 0 || prog < 0.15 || prog > 0.7) return;
-    const chance = (1 - r.p.calm / 100) * 0.03 * (r.style === '逃げ' ? 0.4 : 1);
+    const chance = (1 - r.p.calm / 100) * 0.03 * (r.style === '逃げ' ? 0.4 : 1) * r.p.hold;
     if (Math.random() < chance * SIM_DT) {
       r.kakari = rand(3, 7);
       r.kakariCount += 1;

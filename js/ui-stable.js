@@ -2,7 +2,11 @@ import { el, formatMoney, formatDate } from './util.js';
 import { STYLES, GROWTH_LABELS, horseAge, horseClass, overallRating, gradeOf } from './horse.js';
 import { INTENSITY, AUTO_MENU_ID } from './training.js';
 import { entryBlocker } from './race-data.js';
-import { weekRaces, retireHorse, renameHorse, bloodbook, trainingPlan, qualifiesAsMare } from './game.js';
+import {
+  weekRaces, retireHorse, renameHorse, bloodbook, trainingPlan, qualifiesAsMare,
+  bestJockey, takenJockeys, jockeyById, jockeyFeeLimit,
+} from './game.js';
+import { jockeyBonus } from './race-sim.js';
 import { findCrosses } from './bloodline.js';
 import {
   openSheet, confirmSheet, toast, paddockPortrait, horseThumb, radarChart, statBars, skillBars, meter,
@@ -13,7 +17,11 @@ export function planText(h, state, data) {
   const age = horseAge(h, state.year);
   if (age < 1) return '母のそばで成長中';
   if (h.injury) return `故障療養中（${h.injury.name}・あと${h.injury.weeks}週）`;
-  if (h.entry) return `出走：${h.entry.raceName}（${h.entry.style}）`;
+  if (h.entry) {
+    const j = jockeyById(data, h.entry.jockeyId);
+    const rider = j ? `・騎手 ${j.name}${h.entry.jockeyAuto ? '（おまかせ）' : ''}` : '・騎手 おまかせ';
+    return `出走：${h.entry.raceName}（${h.entry.style}${rider}）`;
+  }
   const plan = trainingPlan(h, data, state.year);
   const it = plan.menu.noIntensity ? '' : `・${INTENSITY[plan.intensity].label}`;
   if (h.train.menuId === AUTO_MENU_ID) return `調教：おまかせ（今週は ${plan.menu.name}${it}）`;
@@ -114,8 +122,52 @@ function planButtons(h, ctx) {
       el('button', { class: 'btn', text: '調教を選ぶ', onclick: () => openTrainingPicker(h, ctx) }),
       age >= 2 ? el('button', { class: 'btn btn-primary', text: 'レースを選ぶ', onclick: () => openRacePicker(h, ctx) }) : null,
     ]),
-    h.entry ? el('button', { class: 'btn btn-ghost', text: '出走を取り消す', onclick: () => { h.entry = null; refresh(); } }) : null,
+    h.entry ? el('div', { class: 'btn-row' }, [
+      el('button', { class: 'btn', text: '騎手を選ぶ', onclick: () => openJockeyPicker(h, ctx) }),
+      el('button', { class: 'btn btn-ghost', text: '出走を取り消す', onclick: () => { h.entry = null; refresh(); } }),
+    ]) : null,
   ]);
+}
+
+const surfaceText = (s) => (s === 'turf' ? '芝' : 'ダート');
+
+function jockeyRow(j, { race, style, isBest, isTaken, isCurrent }, onPick) {
+  const pct = ((jockeyBonus(j, race, style) - 1) * 100).toFixed(1);
+  const over = j.fee > jockeyFeeLimit(race);
+  return el('div', { class: `race-row${isTaken ? ' is-blocked' : ''}` }, [
+    el('div', {}, [
+      el('div', {}, [el('b', { text: j.name }), isBest ? el('span', { class: 'chip', text: 'おすすめ' }) : null, isCurrent ? el('span', { class: 'chip', text: '騎乗予定' }) : null]),
+      el('div', { class: 'muted small', text: `腕前 ${gradeOf(j.skill)}・得意 ${j.style}・${surfaceText(j.surface)}・騎乗料 ${formatMoney(j.fee)}` }),
+      el('div', { class: `small ${Number(pct) > 0 ? 'good' : 'muted'}`, text: isTaken ? '自厩舎の別の馬に騎乗予定' : `このレースでの効果 ${Number(pct) > 0 ? '+' : ''}${pct}%${over ? '（騎乗料が賞金の2%超）' : ''}` }),
+    ]),
+    isTaken ? null : el('button', { class: 'btn btn-primary btn-small', text: '選ぶ', onclick: onPick }),
+  ]);
+}
+
+function openJockeyPicker(h, ctx) {
+  const { state, data, refresh } = ctx;
+  const race = weekRaces(state, data).find((r) => r.id === h.entry.raceId);
+  if (!race) return;
+  const style = h.entry.style;
+  const taken = takenJockeys(state, h, race.id);
+  const best = bestJockey(data, race, style, taken);
+  let close;
+  const choose = (j, auto) => {
+    Object.assign(h.entry, { jockeyId: j.id, jockeyAuto: auto });
+    close();
+    refresh();
+    toast(`${h.name}の騎手を${j.name}にしました`);
+  };
+  const sorted = [...data.jockeys].sort((a, b) => jockeyBonus(b, race, style) - jockeyBonus(a, race, style) || a.fee - b.fee);
+  const body = el('div', { class: 'picker' }, [
+    el('p', { class: 'muted small', text: `おまかせは、騎乗料が1着賞金の2%（${formatMoney(jockeyFeeLimit(race))}）までの騎手から、${surfaceText(race.surface)}・${style}にいちばん合う騎手を選びます。騎乗料は着順に関係なく払います。` }),
+    best ? el('button', { class: 'btn btn-primary btn-big', text: `おまかせ（${best.name}）`, onclick: () => choose(best, true) }) : null,
+    el('h4', { text: '騎手を指名する' }),
+    ...sorted.map((j) => jockeyRow(j, {
+      race, style, isBest: j === best, isTaken: taken.has(j.id), isCurrent: j.id === h.entry.jockeyId,
+    }, () => choose(j, false))),
+  ]);
+  close = openSheet(`${h.name}の騎手`, body);
 }
 
 function manageButtons(h, ctx) {
@@ -227,10 +279,11 @@ function raceRow(h, race, style, ctx, close) {
   const { state, refresh } = ctx;
   const reason = entryBlocker(h, race, state.year);
   const pick = () => {
-    h.entry = { raceId: race.id, raceName: race.name, style };
+    const j = bestJockey(ctx.data, race, style, takenJockeys(state, h, race.id));
+    h.entry = { raceId: race.id, raceName: race.name, style, jockeyId: j?.id ?? null, jockeyAuto: true };
     close();
     refresh();
-    toast(`${race.name}に${style}で出走登録しました`);
+    toast(`${race.name}に${style}で出走登録しました${j ? `（騎手 ${j.name}）` : ''}`);
   };
   return el('div', { class: `race-row${reason ? ' is-blocked' : ''}` }, [
     el('div', {}, [

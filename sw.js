@@ -1,11 +1,11 @@
 // データやコードを更新したら必ずこの番号を上げる（端末に古い版が残らないように）
-const CACHE_NAME = 'turf-lineage-v11';
+const CACHE_NAME = 'turf-lineage-v12';
 const ASSETS = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'js/main.js', 'js/util.js', 'js/bloodline.js', 'js/horse.js', 'js/horse-art.js', 'js/training.js', 'js/race-data.js',
   'js/race-sim.js', 'js/race-scene.js', 'js/race-view.js', 'js/game.js',
   'js/ui-common.js', 'js/ui-stable.js', 'js/ui-race.js', 'js/ui-farm.js',
-  'data/trainings.json', 'data/sires.json', 'data/names.json', 'data/races.json', 'data/bloodlines.json', 'data/horse-shapes.json',
+  'data/trainings.json', 'data/sires.json', 'data/names.json', 'data/races.json', 'data/bloodlines.json', 'data/jockeys.json', 'data/horse-shapes.json',
   'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 

@@ -7,7 +7,7 @@ import { renderStable, renderHorse } from './ui-stable.js';
 import { runWeekRaces, showWeekReport, renderSchedule } from './ui-race.js';
 import { renderFarm, renderRecords } from './ui-farm.js';
 
-const DATA_FILES = ['trainings', 'sires', 'names', 'races', 'bloodlines'];
+const DATA_FILES = ['trainings', 'sires', 'names', 'races', 'bloodlines', 'jockeys'];
 const SILK_COLORS = ['#c0392b', '#1e3a8a', '#f5c518', '#16a085', '#ffffff', '#111111', '#8e44ad', '#e67e22', '#e84393', '#0984e3'];
 const PATTERNS = [['plain', '無地'], ['hoops', '輪'], ['stripes', '縦縞'], ['sash', 'たすき'], ['cross', '十字'], ['diamonds', 'ダイヤ']];
 const TABS = [['stable', '厩舎', '🐎'], ['schedule', '番組', '📅'], ['farm', '牧場', '🌾'], ['records', '記録', '🏆']];

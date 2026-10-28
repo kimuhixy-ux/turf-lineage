@@ -5,6 +5,7 @@ import {
 import { applyTraining, applyRest, applyRaceAftermath, chooseAutoTraining, AUTO_MENU_ID, INTENSITY } from './training.js';
 import { createBloodbook, diagnose, breedingRecord, joinPed } from './bloodline.js';
 import { racesForWeek, npcHorse, weatherFor } from './race-data.js';
+import { jockeyBonus } from './race-sim.js';
 
 const SAVE_KEY = 'turf-lineage-save-v1';
 const BOARD_FEE = 60;
@@ -195,6 +196,38 @@ function randomSilks() {
   return { main, sub, pattern: pick(PATTERNS) };
 }
 
+// 安いレースに名手を乗せると騎乗料で赤字になるので、おまかせは1着賞金の2%までの騎手から選ぶ
+const JOCKEY_FEE_RATE = 0.02;
+
+export const jockeyFeeLimit = (race) => race.purse * JOCKEY_FEE_RATE;
+export const jockeyById = (data, id) => data.jockeys.find((j) => j.id === id) ?? null;
+
+// 同じレースに自厩舎の馬が2頭いるとき、1人の騎手を取り合わないようにする
+export function takenJockeys(state, h, raceId) {
+  return new Set(state.horses.filter((o) => o !== h && o.entry?.raceId === raceId && o.entry.jockeyId).map((o) => o.entry.jockeyId));
+}
+
+export function bestJockey(data, race, style, taken = new Set()) {
+  const free = data.jockeys.filter((j) => !taken.has(j.id));
+  const affordable = free.filter((j) => j.fee <= jockeyFeeLimit(race));
+  const pool = affordable.length ? affordable : free;
+  const better = (a, b) => {
+    const d = jockeyBonus(b, race, style) - jockeyBonus(a, race, style);
+    return d > 1e-9 || (Math.abs(d) <= 1e-9 && b.fee < a.fee) ? b : a;
+  };
+  return pool.length ? pool.reduce(better) : null;
+}
+
+function assignJockeys(data, race, pool) {
+  const used = new Set();
+  for (const r of pool.filter((x) => x.isPlayer)) {
+    r.jockey = jockeyById(data, r.horse.entry?.jockeyId) ?? bestJockey(data, race, r.style, used);
+    if (r.jockey) used.add(r.jockey.id);
+  }
+  const rest = data.jockeys.filter((j) => !used.has(j.id)).sort(() => Math.random() - 0.5);
+  pool.filter((x) => !x.isPlayer).forEach((r, i) => { r.jockey = rest[i] ?? null; });
+}
+
 export function buildRunners(state, data, race, entries) {
   const size = race.grade === 'G1' ? 18 : race.grade.startsWith('G') ? 16 : randInt(12, 16);
   const taken = new Set(entries.map((e) => e.horse.name));
@@ -204,6 +237,7 @@ export function buildRunners(state, data, race, entries) {
     taken.add(h.name);
     pool.push({ horse: h, name: h.name, style: h.style, isPlayer: false, silks: randomSilks() });
   }
+  assignJockeys(data, race, pool);
   pool.sort(() => Math.random() - 0.5);
   const counts = frameCounts(pool.length);
   let n = 0;
@@ -246,7 +280,8 @@ export function applyRaceResults(state, race, results) {
     if (res.rank === 2) r.seconds += 1;
     if (res.rank === 3) r.thirds += 1;
     r.earnings += prize;
-    state.money += Math.round(prize * OWNER_SHARE);
+    const fee = res.runner.jockey?.fee ?? 0;
+    state.money += Math.round(prize * OWNER_SHARE) - fee;
     if (res.rank === 1 && race.grade.startsWith('G')) {
       r.gradedWins += 1;
       const title = { year: state.year, name: race.name, grade: race.grade, horse: h.name };
@@ -255,7 +290,7 @@ export function applyRaceResults(state, race, results) {
     }
     r.history.push({ year: state.year, week: state.week, name: race.name, grade: race.grade, rank: res.rank, field: results.length, time: res.time });
     applyRaceAftermath(h, race);
-    out.push({ horse: h, rank: res.rank, prize: Math.round(prize * OWNER_SHARE) });
+    out.push({ horse: h, rank: res.rank, prize: Math.round(prize * OWNER_SHARE), jockey: res.runner.jockey, fee });
   }
   return out;
 }
