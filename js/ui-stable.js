@@ -283,6 +283,8 @@ function raceRow(h, race, style, ctx, close) {
     h.entry = { raceId: race.id, raceName: race.name, style, jockeyId: j?.id ?? null, jockeyAuto: true };
     close();
     refresh();
+    // 何頭も続けて登録しやすいよう、登録後は厩舎の一覧に戻す
+    ctx.go({ tab: 'stable' });
     toast(`${race.name}に${style}で出走登録しました${j ? `（騎手 ${j.name}）` : ''}`);
   };
   return el('div', { class: `race-row${reason ? ' is-blocked' : ''}` }, [
