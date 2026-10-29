@@ -129,6 +129,7 @@ export function buyLot(state, lotId) {
   if (state.money < lot.price) return '資金が足りません';
   state.money -= lot.price;
   lot.sold = true;
+  if (horseAge(lot.horse, state.year) === 1) lot.horse.train.menuId = AUTO_MENU_ID;
   state.horses.push(lot.horse);
   return null;
 }
@@ -340,6 +341,9 @@ function newYear(state, data) {
     mare.bred = null;
   }
   for (const name of releaseUnqualifiedMares(state)) events.push(`${name}は重賞未勝利のため繁殖牝馬の登録を外れました`);
+  const yearlings = state.horses.filter((h) => horseAge(h, state.year) === 1);
+  for (const h of yearlings) h.train.menuId = AUTO_MENU_ID;
+  if (yearlings.length) events.push(`${yearlings.map((h) => h.name).join('、')}が1歳になり、調教をおまかせで始めました`);
   for (const h of [...state.horses]) {
     if (horseAge(h, state.year) >= 8) {
       const msg = retireHorse(state, h.id, h.sex === '牝' && state.mares.length < 8);
