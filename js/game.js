@@ -160,6 +160,25 @@ export function releaseUnqualifiedMares(state) {
   return released.map((m) => m.name);
 }
 
+// 開き直して高値を引き直せないよう、乱数を入れず能力と重賞実績だけで値段を決める
+export function marePrice(mare) {
+  const ability = Math.pow(Math.max(0, overallRating(mare.stats) - 55), 2) * 5;
+  const titles = (mare.record?.titles ?? []).reduce((sum, t) => sum + (t.grade === 'G1' ? 1500 : 500), 0);
+  return clamp(Math.round((ability + titles + 200) / 50) * 50, 200, 30000);
+}
+
+// 受胎中に売ると払った種付け料と仔が消えてしまうので、出産まで売れないようにする
+export const canSellMare = (state, mare) => mare.bred?.year !== state.year;
+
+export function sellMare(state, mareId) {
+  const mare = state.mares.find((m) => m.id === mareId);
+  if (!mare) return '見つかりません';
+  if (!canSellMare(state, mare)) return '受胎中は売却できません';
+  state.money += marePrice(mare);
+  state.mares = state.mares.filter((m) => m !== mare);
+  return null;
+}
+
 export function retireHorse(state, horseId, toBreeding) {
   const i = state.horses.findIndex((h) => h.id === horseId);
   if (i < 0) return;

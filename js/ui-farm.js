@@ -2,7 +2,7 @@ import { el, formatMoney } from './util.js';
 import { STAT_KEYS, STAT_LABELS, GROWTH_LABELS, coatById, gradeOf, overallRating, growthOdds } from './horse.js';
 import {
   allSires, auctionOpen, buyLot, breedMare, breedingSeason, deleteSave, BREEDING_WEEKS, AUCTION_WEEKS,
-  bloodbook, breedingPlan,
+  bloodbook, breedingPlan, marePrice, canSellMare, sellMare,
 } from './game.js';
 import {
   openSheet, confirmSheet, toast, horseThumb, statBars, gradeBadge,
@@ -73,7 +73,13 @@ function openSirePicker(mare, ctx) {
 }
 
 function mareCard(mare, ctx) {
-  const { state } = ctx;
+  const { state, refresh } = ctx;
+  const price = marePrice(mare);
+  const sell = () => confirmSheet(`${mare.name}を${formatMoney(price)}で売却しますか？元には戻せません。`, '売却する', () => {
+    const err = sellMare(state, mare.id);
+    toast(err ?? `${mare.name}を${formatMoney(price)}で売却しました`);
+    refresh();
+  });
   const bredThisYear = mare.bred?.year === state.year;
   const status = bredThisYear ? `受胎：父 ${mare.bred.sireName}（来年1月に誕生）` : breedingSeason(state) ? '種付けできます' : `種付けは2〜5月（第${BREEDING_WEEKS[0]}〜${BREEDING_WEEKS[1]}週）`;
   return el('div', { class: 'horse-card' }, [
@@ -82,7 +88,12 @@ function mareCard(mare, ctx) {
       el('div', { class: 'horse-card-name' }, [el('b', { text: mare.name }), el('span', { class: 'chip', text: gradeOf(overallRating(mare.stats)) })]),
       el('div', { class: 'muted small', text: `${coatById(mare.coat).name}・母父 ${mare.sireName}・${sireSummary(mare)}` }),
       el('div', { class: `plan small${bredThisYear ? ' is-race' : ''}`, text: status }),
-      !bredThisYear && breedingSeason(state) ? el('button', { class: 'btn btn-primary btn-small', text: '種牡馬を選ぶ', onclick: () => openSirePicker(mare, ctx) }) : null,
+      el('div', { class: 'btn-row' }, [
+        !bredThisYear && breedingSeason(state) ? el('button', { class: 'btn btn-primary btn-small', text: '種牡馬を選ぶ', onclick: () => openSirePicker(mare, ctx) }) : null,
+        canSellMare(state, mare)
+          ? el('button', { class: 'btn btn-ghost btn-danger btn-small', text: `売却 ${formatMoney(price)}`, onclick: sell })
+          : el('span', { class: 'muted small', text: '受胎中は売却できません' }),
+      ]),
     ]),
   ]);
 }
