@@ -171,6 +171,13 @@ async function advanceWeek() {
   }
 }
 
+// 馬の詳細画面では右クリックを「厩舎へ戻る」の近道にする。開いているシートの操作を邪魔しないよう、シート表示中は除く
+document.addEventListener('contextmenu', (e) => {
+  if (!state || !view.horseId || document.querySelector('.sheet')) return;
+  e.preventDefault();
+  go({ tab: 'stable' });
+});
+
 async function boot() {
   try {
     data = await loadData();
