@@ -1,7 +1,7 @@
 import { el, formatMoney, formatDate } from './util.js';
 import { drawHorse } from './horse-art.js';
 import { PALETTES, buildScene, drawBackdrop, drawTrack, drawInnerRail, drawGrade } from './race-scene.js';
-import { newGame, loadGame, saveGame, runTrainingWeek, endWeek, migrateState, releaseUnqualifiedMares } from './game.js';
+import { newGame, loadGame, saveGame, runTrainingWeek, endWeek, migrateState, releaseUnqualifiedMares, ensureRivals } from './game.js';
 import { stopAnimations, animate, hiDpiCanvas, segmented, toast } from './ui-common.js';
 import { renderStable, renderHorse, canPickRace, openRacePicker } from './ui-stable.js';
 import { runWeekRaces, showWeekReport, renderSchedule } from './ui-race.js';
@@ -110,6 +110,8 @@ function renderNewGame() {
 function start(s, firstView = { tab: 'stable' }) {
   state = migrateState(s, data);
   releaseUnqualifiedMares(state);
+  // 宿敵を入れる前のセーブでも、すでに2歳以上の馬がいる世代には宿敵を用意する
+  ensureRivals(state, data);
   view = firstView;
   saveGame(state);
   render();

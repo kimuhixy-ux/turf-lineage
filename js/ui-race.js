@@ -3,7 +3,7 @@ import { STAT_LABELS, SKILL_LABELS, horseAge } from './horse.js';
 import { RaceSim, formatTime } from './race-sim.js';
 import { RaceView } from './race-view.js';
 import { racesForWeek } from './race-data.js';
-import { buildRunners, makeGround, applyRaceResults, weekRaces } from './game.js';
+import { buildRunners, makeGround, applyRaceResults, applyRivalResult, weekRaces } from './game.js';
 import { frameBadge, gradeBadge, openSheet, stopAnimations } from './ui-common.js';
 
 const WEATHER_ICON = { 晴: '☀️', 曇: '☁️', 雨: '🌧️' };
@@ -29,10 +29,10 @@ function raceHeader(race, ground) {
 function showRaceCard(state, race, runners, ground) {
   return new Promise((resolve) => {
     const node = overlay('race-card');
-    const rows = runners.map((r) => el('tr', { class: r.isPlayer ? 'is-player' : '' }, [
+    const rows = runners.map((r) => el('tr', { class: r.isPlayer ? 'is-player' : r.isRival ? 'is-rival' : '' }, [
       el('td', {}, frameBadge(r.frame, r.number)),
       el('td', { class: 'mark', text: r.mark }),
-      el('td', {}, [el('b', { text: r.name }), el('div', { class: 'muted small', text: `${r.horse.sex}${runnerAge(r, race, state.year)}・${r.style}${r.jockey ? `・${r.jockey.name}` : ''}` })]),
+      el('td', {}, [el('b', { text: r.name }), r.isRival ? el('span', { class: 'chip chip-rival', text: '宿敵' }) : null, el('div', { class: 'muted small', text: `${r.horse.sex}${runnerAge(r, race, state.year)}・${r.style}${r.jockey ? `・${r.jockey.name}` : ''}` })]),
       el('td', { class: 'num', text: `${r.popularity}番人気` }),
       el('td', { class: 'num', text: r.odds.toFixed(1) }),
     ]));
@@ -77,10 +77,10 @@ function resultHeadline(outcomes) {
   return el('div', { class: `result-headline${best.rank === 1 ? ' is-win' : ''}`, text });
 }
 
-function showResult(race, ground, results, outcomes) {
+function showResult(race, ground, results, outcomes, rivalNote) {
   return new Promise((resolve) => {
     const node = overlay('race-result');
-    const rows = results.map((res) => el('tr', { class: res.runner.isPlayer ? 'is-player' : '' }, [
+    const rows = results.map((res) => el('tr', { class: res.runner.isPlayer ? 'is-player' : res.runner.isRival ? 'is-rival' : '' }, [
       el('td', { class: 'num', text: String(res.rank) }),
       el('td', {}, frameBadge(res.runner.frame, res.runner.number)),
       el('td', { text: res.runner.name }),
@@ -91,6 +91,7 @@ function showResult(race, ground, results, outcomes) {
     node.append(el('div', { class: 'overlay-inner' }, [
       raceHeader(race, ground),
       resultHeadline(outcomes),
+      rivalNote ? el('p', { class: 'rival-note', text: rivalNote }) : null,
       ...outcomes.map((o) => el('p', { class: 'small', text: `${o.horse.name}：${o.rank}着${o.prize ? `　賞金 ${formatMoney(o.prize)}（馬主取り分8割）` : ''}${o.fee ? `　騎乗料 ${formatMoney(o.fee)}（${o.jockey.name}）` : ''}` })),
       el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, [
         el('thead', {}, el('tr', {}, ['着', '番', '馬名', 'タイム', '着差', '人気'].map((t) => el('th', { text: t })))),
@@ -116,8 +117,9 @@ export async function runWeekRaces(state, data) {
     const sim = new RaceSim(race, runners, ground);
     const results = await playRace(sim, skip);
     const out = applyRaceResults(state, race, results);
+    const rivalNote = applyRivalResult(state, race, results);
     outcomes.push(...out.map((o) => ({ ...o, race })));
-    await showResult(race, ground, results, out);
+    await showResult(race, ground, results, out, rivalNote);
   }
   return outcomes;
 }

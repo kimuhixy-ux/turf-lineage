@@ -62,7 +62,7 @@ export function racesForWeek(data, year, week) {
   return [...graded, ...generated];
 }
 
-function ageOk(cond, age) {
+export function ageOk(cond, age) {
   if (cond === '2') return age === 2;
   if (cond === '3') return age === 3;
   if (cond === '3+') return age >= 3;

@@ -1,10 +1,10 @@
 import { rand, randInt, pick, clamp, gauss, uid, monthOf, WEEKS_PER_YEAR } from './util.js';
 import {
-  STAT_KEYS, GROWTH_LABELS, grownHorse, randomDam, breedFoal, horseAge, horseClass, overallRating, makeName,
+  STAT_KEYS, COATS, GROWTH_LABELS, grownHorse, randomDam, breedFoal, horseAge, horseClass, overallRating, makeName,
 } from './horse.js';
 import { applyTraining, applyRest, applyRaceAftermath, chooseAutoTraining, AUTO_MENU_ID, INTENSITY } from './training.js';
 import { createBloodbook, diagnose, breedingRecord, joinPed } from './bloodline.js';
-import { racesForWeek, npcHorse, weatherFor } from './race-data.js';
+import { racesForWeek, npcHorse, weatherFor, ageOk } from './race-data.js';
 import { jockeyBonus } from './race-sim.js';
 
 const SAVE_KEY = 'turf-lineage-save-v1';
@@ -248,10 +248,107 @@ function assignJockeys(data, race, pool) {
   pool.filter((x) => !x.isPlayer).forEach((r, i) => { r.jockey = rest[i] ?? null; });
 }
 
+// 同期の宿敵。自分の馬がいる世代ごとに1頭だけ生まれ、重賞でたびたび立ちはだかる。
+// 毎回作り直すNPCと違って能力を保存しておき、何度も戦ううちに因縁が生まれるようにする
+const RIVAL_BASE = [80, 83];
+// 年齢ごとの強さの上下。2歳はまだ幼く、4〜5歳が全盛、6歳から衰える
+const RIVAL_AGE_SHIFT = { 2: -5, 3: -1, 4: 0, 5: 0, 6: -2, 7: -4 };
+const RIVAL_G23_RATE = 0.5;
+
+function makeRival(data, birthYear, taken) {
+  const center = pick([1600, 2000, 2400]);
+  const surface = Math.random() < 0.8 ? 'turf' : 'dirt';
+  return {
+    id: `rival-${birthYear}`,
+    name: makeName(data.names, taken),
+    sex: Math.random() < 0.75 ? '牡' : '牝',
+    birthYear,
+    base: rand(...RIVAL_BASE),
+    // 能力ごとの得手不得手を固定し、毎回同じ個性で現れるようにする
+    offsets: Object.fromEntries(STAT_KEYS.map((k) => [k, gauss() * 4])),
+    skills: { gate: rand(60, 90), calm: rand(60, 90), corner: rand(60, 90) },
+    surface,
+    apt: surface === 'turf' ? { turf: 1, dirt: 0.88 } : { turf: 0.88, dirt: 1 },
+    dist: [center - 400, center + 400],
+    style: pick(['先行', '差し']),
+    coat: pick(COATS).id,
+    markings: { face: pick(['star', 'stripe', 'blaze']), socks: [0, 1, 2, 3].map(() => Math.random() < 0.3) },
+    silks: randomSilks(),
+    record: { starts: 0, wins: 0, gradedWins: 0 },
+    vs: { meets: 0, ahead: 0 },
+  };
+}
+
+// 自分の馬が2歳になった世代に宿敵を用意する。新しく現れた宿敵の知らせを返す
+export function ensureRivals(state, data) {
+  state.rivals ??= [];
+  const taken = new Set([...nameTaken(state), ...state.rivals.map((r) => r.name)]);
+  const news = [];
+  const years = new Set(state.horses.filter((h) => horseAge(h, state.year) >= 2).map((h) => h.birthYear));
+  for (const birthYear of years) {
+    if (state.rivals.some((r) => r.birthYear === birthYear)) continue;
+    const r = makeRival(data, birthYear, taken);
+    taken.add(r.name);
+    state.rivals.push(r);
+    news.push(`同期の宿敵 ${r.name}（${r.sex}・${r.surface === 'turf' ? '芝' : 'ダート'}${r.dist[0]}〜${r.dist[1]}m が得意）が現れました`);
+  }
+  return news;
+}
+
+function rivalAge(r, year) {
+  return year - r.birthYear;
+}
+
+function rivalFits(r, race, year) {
+  const age = rivalAge(r, year);
+  if (!(age in RIVAL_AGE_SHIFT) || !ageOk(race.age, age)) return false;
+  if (race.sex === 'mare' && r.sex !== '牝') return false;
+  return race.surface === r.surface && race.distance >= r.dist[0] - 200 && race.distance <= r.dist[1] + 200;
+}
+
+// G1には必ず、G2・G3には半分の確率で出てくる。自分の馬と同じ世代の宿敵を優先する
+function pickRival(state, race, entries) {
+  if (!race.grade.startsWith('G')) return null;
+  if (race.grade !== 'G1' && Math.random() >= RIVAL_G23_RATE) return null;
+  const fits = (state.rivals ?? []).filter((r) => rivalFits(r, race, state.year));
+  const sameCrop = fits.filter((r) => entries.some((e) => e.horse.birthYear === r.birthYear));
+  return pick(sameCrop.length ? sameCrop : fits) ?? null;
+}
+
+function rivalHorse(r, year) {
+  const shift = RIVAL_AGE_SHIFT[rivalAge(r, year)];
+  const stats = Object.fromEntries(STAT_KEYS.map((k) => [k, clamp(r.base + shift + r.offsets[k], 25, 99)]));
+  return {
+    id: r.id, name: r.name, sex: r.sex, birthYear: r.birthYear, stats, skills: r.skills, apt: r.apt, dist: r.dist,
+    style: r.style, condition: rand(55, 85), coat: r.coat, markings: r.markings,
+  };
+}
+
+// 宿敵が走ったレースの成績と対戦成績を記録し、結果画面に出す一言を返す
+export function applyRivalResult(state, race, results) {
+  const res = results.find((x) => x.runner.isRival);
+  const r = res && state.rivals.find((x) => x.id === res.runner.horse.id);
+  if (!r) return null;
+  r.record.starts += 1;
+  if (res.rank === 1) r.record.wins += 1;
+  if (res.rank === 1 && race.grade.startsWith('G')) r.record.gradedWins += 1;
+  const best = Math.min(...results.filter((x) => x.runner.isPlayer).map((x) => x.rank));
+  const won = best < res.rank;
+  r.vs.meets += 1;
+  if (won) r.vs.ahead += 1;
+  const tally = `対戦成績 ${r.vs.ahead}勝${r.vs.meets - r.vs.ahead}敗`;
+  return `${won ? '⚔️ 宿敵に先着！' : '宿敵に敗れました…'} ${r.name}は${res.rank}着（${tally}）`;
+}
+
 export function buildRunners(state, data, race, entries) {
   const size = race.grade === 'G1' ? 18 : race.grade.startsWith('G') ? 16 : randInt(12, 16);
   const taken = new Set(entries.map((e) => e.horse.name));
   const pool = entries.map((e) => ({ horse: e.horse, name: e.horse.name, style: e.style, isPlayer: true, silks: state.silks }));
+  const rival = pickRival(state, race, entries);
+  if (rival) {
+    taken.add(rival.name);
+    pool.push({ horse: rivalHorse(rival, state.year), name: rival.name, style: rival.style, isPlayer: false, isRival: true, silks: rival.silks });
+  }
   while (pool.length < size) {
     const h = npcHorse(race, data.names, taken);
     taken.add(h.name);
@@ -386,6 +483,7 @@ export function endWeek(state, data) {
   }
   state.week += 1;
   if (state.week > WEEKS_PER_YEAR) events.push(...newYear(state, data));
+  events.push(...ensureRivals(state, data));
   if (state.week === AUCTION_WEEKS[0]) {
     state.auction = { key: `y${state.year}`, lots: [...makeLots(state, data, 1, 7), makeStarLot(state, data)] };
     events.push('1歳馬のセリ（7〜8月）が開かれています');

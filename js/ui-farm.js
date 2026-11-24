@@ -144,6 +144,22 @@ export function renderFarm(ctx) {
   ]);
 }
 
+// 宿敵ごとの対戦成績。新しい世代を上に出す
+function rivalSection(state) {
+  const rivals = [...(state.rivals ?? [])].reverse();
+  if (!rivals.length) return [];
+  return [
+    el('h3', { class: 'section-title', text: `宿敵（${rivals.length}）` }),
+    ...rivals.map((r) => el('div', { class: 'race-row' }, [
+      el('div', {}, [
+        el('b', { text: r.name }),
+        el('div', { class: 'muted small', text: `${r.birthYear}年目生まれ・${r.sex}・${r.surface === 'turf' ? '芝' : 'ダート'}${r.dist[0]}〜${r.dist[1]}m　${r.record.starts}戦${r.record.wins}勝（重賞${r.record.gradedWins}勝）` }),
+      ]),
+      el('b', { class: 'small', text: r.vs.meets ? `対戦 ${r.vs.ahead}勝${r.vs.meets - r.vs.ahead}敗` : '未対戦' }),
+    ])),
+  ];
+}
+
 export function renderRecords(ctx) {
   const { state, restart } = ctx;
   const reset = () => confirmSheet('セーブデータを消して最初からやり直しますか？元には戻せません。', '消して最初から', () => {
@@ -155,6 +171,7 @@ export function renderRecords(ctx) {
     ...(state.titles.length ? [...state.titles].reverse().map((t) => el('div', { class: 'race-row' }, [
       el('div', {}, [gradeBadge(t.grade), el('b', { text: ` ${t.name}` }), el('div', { class: 'muted small', text: `${t.year}年目・${t.horse}` })]),
     ])) : [el('p', { class: 'muted small', text: 'まだ重賞を勝っていません。' })]),
+    ...rivalSection(state),
     el('h3', { class: 'section-title', text: `引退馬（${state.history.length}）` }),
     ...[...state.history].reverse().map((h) => el('p', { class: 'small', text: `${h.name}（${h.sex}・父 ${h.sireName}）${h.record.starts}戦${h.record.wins}勝・${formatMoney(h.record.earnings)}` })),
     el('h3', { class: 'section-title', text: '設定' }),
