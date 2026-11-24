@@ -304,7 +304,10 @@ function distanceHint(h, race) {
   return el('div', { class: `small ${fits ? 'good' : 'muted'}`, text });
 }
 
-function openRacePicker(h, ctx) {
+// 「レースを選ぶ」ボタンが出る条件と同じ。右クリックの近道でも同じ馬だけに出すため
+export const canPickRace = (h, year) => horseAge(h, year) >= 2 && !h.injury;
+
+export function openRacePicker(h, ctx, opts = {}) {
   const { state, data } = ctx;
   const races = weekRaces(state, data);
   let style = h.entry?.style ?? h.style;
@@ -324,5 +327,6 @@ function openRacePicker(h, ctx) {
     );
   };
   draw();
-  close = openSheet(`${h.name}の出走`, body);
+  close = openSheet(`${h.name}の出走`, body, opts);
+  return close;
 }

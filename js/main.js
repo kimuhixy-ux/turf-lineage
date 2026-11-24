@@ -3,7 +3,7 @@ import { drawHorse } from './horse-art.js';
 import { PALETTES, buildScene, drawBackdrop, drawTrack, drawInnerRail, drawGrade } from './race-scene.js';
 import { newGame, loadGame, saveGame, runTrainingWeek, endWeek, migrateState, releaseUnqualifiedMares } from './game.js';
 import { stopAnimations, animate, hiDpiCanvas, segmented, toast } from './ui-common.js';
-import { renderStable, renderHorse } from './ui-stable.js';
+import { renderStable, renderHorse, canPickRace, openRacePicker } from './ui-stable.js';
 import { runWeekRaces, showWeekReport, renderSchedule } from './ui-race.js';
 import { renderFarm, renderRecords } from './ui-farm.js';
 
@@ -171,11 +171,24 @@ async function advanceWeek() {
   }
 }
 
-// 馬の詳細画面では右クリックを「厩舎へ戻る」の近道にする。開いているシートの操作を邪魔しないよう、シート表示中は除く
+// 馬の詳細画面の右クリック：1回目でレース選択を開き、開いたままもう一度で閉じて厩舎へ戻る
+let closeRacePicker = null;
+
 document.addEventListener('contextmenu', (e) => {
-  if (!state || !view.horseId || document.querySelector('.sheet')) return;
+  if (!state || !view.horseId) return;
+  if (closeRacePicker) {
+    e.preventDefault();
+    closeRacePicker();
+    go({ tab: 'stable' });
+    return;
+  }
+  // 調教や騎手のシートを操作中に裏の画面だけ切り替わらないよう、ほかのシート表示中は何もしない
+  if (document.querySelector('.sheet')) return;
   e.preventDefault();
-  go({ tab: 'stable' });
+  const h = state.horses.find((x) => x.id === view.horseId);
+  if (!h || !canPickRace(h, state.year)) return go({ tab: 'stable' });
+  // ×・背景・出走のどれで閉じても onClose が呼ばれるので、ここで開いている印を消す
+  closeRacePicker = openRacePicker(h, ctx(), { onClose: () => { closeRacePicker = null; } });
 });
 
 async function boot() {
