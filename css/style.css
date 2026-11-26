@@ -248,6 +248,7 @@ h4 { margin: 14px 0 6px; font-size: 14px; color: var(--muted); }
 .chip-rival { background: #c0392b; color: #fff; border-color: transparent; }
 .rival-note { font-weight: 700; margin: 8px 0; }
 .honor-note { font-weight: 800; color: var(--gold); margin: 8px 0; }
+.trainer-line { margin: 6px 0; line-height: 1.6; }
 
 /* ---------- シート（下から出るパネル） ---------- */
 .sheet-layer {

@@ -1,10 +1,12 @@
-import { el, formatMoney, formatDate } from './util.js';
-import { STYLES, GROWTH_LABELS, horseAge, horseClass, overallRating, gradeOf } from './horse.js';
+import { el, formatMoney, formatDate, monthOf, WEEKS_PER_YEAR } from './util.js';
+import {
+  STYLES, STAT_KEYS, STAT_LABELS, GROWTH_LABELS, horseAge, horseClass, overallRating, gradeOf, statCeiling, isDeclining,
+} from './horse.js';
 import { INTENSITY, AUTO_MENU_ID } from './training.js';
-import { entryBlocker } from './race-data.js';
+import { entryBlocker, racesForWeek, raceLevel } from './race-data.js';
 import {
   weekRaces, retireHorse, renameHorse, bloodbook, trainingPlan, qualifiesAsMare,
-  bestJockey, takenJockeys, jockeyById, jockeyFeeLimit,
+  bestJockey, takenJockeys, jockeyById, jockeyFeeLimit, CROWNS,
 } from './game.js';
 import { jockeyBonus } from './race-sim.js';
 import { findCrosses } from './bloodline.js';
@@ -198,6 +200,86 @@ function manageButtons(h, ctx) {
   ]);
 }
 
+// 調教師のひとこと。画面の数字だけでは分かりにくい素質・伸びしろ・使いどきを言葉で伝える
+const TRAINER_LINES = 4;
+const LOOKAHEAD_WEEKS = 8;
+
+function healthLine(h) {
+  if (h.injury) return 'ケガが治るまでは無理をさせません。焦らずいきましょう。';
+  if (h.fatigue > 65) return '疲れがたまっています。放牧かケアで休ませてやってください。';
+  if (h.condition >= 85) return '絶好調です。使うなら今ですよ。';
+  return null;
+}
+
+// 同じ年に途中まで勝ち進んでいて、次のレースがまだ終わっていない冠だけを伝える
+function crownLine(h, state, data) {
+  const won = new Set(h.record.titles.filter((t) => t.year === state.year).map((t) => t.name));
+  for (const c of CROWNS) {
+    let done = 0;
+    while (done < c.races.length && won.has(c.races[done])) done += 1;
+    if (!done || done === c.races.length) continue;
+    const next = data.races.find((r) => r.name === c.races[done]);
+    if (!next || (next.month - 1) * 4 + next.wk < state.week) continue;
+    return `${c.title}まであと${c.races.length - done}つ！ 次は${next.name}です。`;
+  }
+  return null;
+}
+
+// 出られて、距離と芝ダートが合い、今の力で戦える重賞のうち、いちばん賞金の高いものをすすめる
+function raceLine(h, state, data) {
+  if (horseAge(h, state.year) < 2 || h.injury) return null;
+  const power = overallRating(h.stats);
+  const end = Math.min(state.week + LOOKAHEAD_WEEKS, WEEKS_PER_YEAR);
+  const picks = [];
+  for (let w = state.week; w <= end; w += 1) {
+    for (const r of racesForWeek(data, state.year, w)) {
+      if (!r.grade.startsWith('G') || entryBlocker(h, r, state.year) || power < raceLevel(r) - 3) continue;
+      const apt = r.surface === 'turf' ? h.apt.turf : h.apt.dirt;
+      if (r.distance >= h.dist[0] && r.distance <= h.dist[1] && apt >= 0.92) picks.push(r);
+    }
+  }
+  const best = picks.sort((a, b) => b.purse - a.purse)[0];
+  if (!best) return null;
+  return `${monthOf(best.week)}月の${best.name}（${best.grade}・${best.surface === 'turf' ? '芝' : 'ダート'}${best.distance}m）が合いそうです。`;
+}
+
+function roomLine(h, data, year) {
+  const [key, room] = STAT_KEYS.map((k) => [k, statCeiling(h, k, year) - h.stats[k]]).sort((a, b) => b[1] - a[1])[0];
+  if (room < 3) return null;
+  const menu = data.trainings.filter((m) => m.gains?.[key] > 0).sort((a, b) => b.gains[key] - a.gains[key])[0];
+  return `${STAT_LABELS[key]}にまだ伸びしろがあります${menu ? `。「${menu.name}」で鍛えるといいでしょう` : ''}。`;
+}
+
+function growthLine(h, year) {
+  const age = horseAge(h, year);
+  if (isDeclining(h, year)) return 'そろそろピークを過ぎてきました。引退の時期も考えておきましょう。';
+  if (h.growth === 'late' && age <= 3) return '晩成型なので、本格化はまだ先です。今は土台作りの時期ですね。';
+  if (h.growth === 'early' && age <= 2) return '早熟型です。2歳のうちからどんどん稼げますよ。';
+  return null;
+}
+
+function potentialLine(h) {
+  const v = overallRating(h.potential);
+  if (v >= 80) return 'この馬の素質は本物です。G1を狙えますよ。';
+  if (v >= 72) return '重賞でも戦える素質がありますね。';
+  if (v >= 64) return 'オープンまでは十分に行ける素質です。';
+  return '大きな舞台は厳しいかもしれませんが、条件戦でこつこつ稼げます。';
+}
+
+function trainerCard(h, ctx) {
+  const { state, data } = ctx;
+  // 当歳はまだ牧場で育てているだけで、調教師が見ていないので出さない
+  if (horseAge(h, state.year) < 1) return null;
+  const lines = [
+    healthLine(h), crownLine(h, state, data), raceLine(h, state, data),
+    roomLine(h, data, state.year), growthLine(h, state.year), potentialLine(h),
+  ].filter(Boolean).slice(0, TRAINER_LINES);
+  return el('section', { class: 'card' }, [
+    el('h3', { text: '調教師のひとこと' }),
+    ...lines.map((t) => el('p', { class: 'trainer-line', text: `「${t}」` })),
+  ]);
+}
+
 export function renderHorse(h, ctx) {
   const { state, go } = ctx;
   const age = horseAge(h, state.year);
@@ -212,6 +294,7 @@ export function renderHorse(h, ctx) {
     ]),
     age >= 1 ? meter('疲労', h.fatigue, h.fatigue > 65 ? 'bad' : h.fatigue > 40 ? 'normal' : 'good') : null,
     el('section', { class: 'card' }, [el('h3', { text: '今週の予定' }), planButtons(h, ctx)]),
+    trainerCard(h, ctx),
     el('section', { class: 'card' }, [
       el('h3', { text: '能力' }),
       el('div', { class: 'ability' }, [radarChart(h), statBars(h)]),
