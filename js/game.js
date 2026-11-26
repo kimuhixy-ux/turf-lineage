@@ -336,6 +336,8 @@ export function applyRivalResult(state, race, results) {
   const won = best < res.rank;
   r.vs.meets += 1;
   if (won) r.vs.ahead += 1;
+  // 年度表彰で自分の馬と比べられるよう、宿敵にも重賞の着順を残す
+  (r.history ??= []).push({ year: state.year, grade: race.grade, rank: res.rank });
   const tally = `対戦成績 ${r.vs.ahead}勝${r.vs.meets - r.vs.ahead}敗`;
   return `${won ? '⚔️ 宿敵に先着！' : '宿敵に敗れました…'} ${r.name}は${res.rank}着（${tally}）`;
 }
@@ -461,8 +463,50 @@ export function runTrainingWeek(state, data) {
   return reports;
 }
 
-function newYear(state, data) {
+// 年度表彰。その年の重賞の着順を点数にして部門ごとに選ぶ。宿敵も候補に入るので、賞を奪われることもある
+const AWARD_POINTS = { G1: [10, 4, 2], G2: [6, 2, 1], G3: [4, 1] };
+const AWARD_MIN_POINTS = 4;
+const AWARDS = [
+  { title: '最優秀2歳牡馬', fits: (c) => c.age === 2 && c.sex === '牡', bonus: 2000 },
+  { title: '最優秀2歳牝馬', fits: (c) => c.age === 2 && c.sex === '牝', bonus: 2000 },
+  { title: '最優秀3歳牡馬', fits: (c) => c.age === 3 && c.sex === '牡', bonus: 3000 },
+  { title: '最優秀3歳牝馬', fits: (c) => c.age === 3 && c.sex === '牝', bonus: 3000 },
+  { title: '最優秀古馬', fits: (c) => c.age >= 4, bonus: 3000 },
+  // 年度代表馬だけはG1を勝っていることを条件にする
+  { title: '年度代表馬', fits: (c) => c.g1Win, bonus: 5000 },
+];
+
+function awardCandidate(x, history, year, isRival) {
+  const races = history.filter((r) => r.year === year);
+  const points = races.reduce((sum, r) => sum + (AWARD_POINTS[r.grade]?.[r.rank - 1] ?? 0), 0);
+  const g1Win = races.some((r) => r.grade === 'G1' && r.rank === 1);
+  return { x, name: x.name, sex: x.sex, age: year - x.birthYear, points, g1Win, isRival };
+}
+
+function yearEndAwards(state) {
+  const year = state.year;
+  const pool = [
+    ...state.horses.map((h) => awardCandidate(h, h.record.history, year, false)),
+    ...(state.rivals ?? []).map((r) => awardCandidate(r, r.history ?? [], year, true)),
+  ].filter((c) => c.points >= AWARD_MIN_POINTS);
   const events = [];
+  for (const award of AWARDS) {
+    const best = pool.filter(award.fits).sort((a, b) => b.points - a.points || a.isRival - b.isRival)[0];
+    if (!best) continue;
+    if (best.isRival) {
+      events.push(`🏅 ${year}年目の${award.title}は宿敵 ${best.name}が受賞しました`);
+      continue;
+    }
+    state.money += award.bonus;
+    (best.x.record.honors ??= []).push(`${year}年目${award.title}`);
+    (state.honors ??= []).push({ year, title: award.title, horse: best.name, amount: award.bonus });
+    events.push(`🏅 ${best.name}が${year}年目の${award.title}に選ばれました（表彰金 ${award.bonus.toLocaleString()}万円）`);
+  }
+  return events;
+}
+
+function newYear(state, data) {
+  const events = yearEndAwards(state);
   state.year += 1;
   state.week = 1;
   for (const mare of state.mares) {
