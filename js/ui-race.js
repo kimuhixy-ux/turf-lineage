@@ -91,6 +91,7 @@ function showResult(race, ground, results, outcomes, rivalNote) {
     node.append(el('div', { class: 'overlay-inner' }, [
       raceHeader(race, ground),
       resultHeadline(outcomes),
+      ...outcomes.filter((o) => o.crown).map((o) => el('p', { class: 'honor-note', text: `👑 ${o.horse.name}、${o.crown.title}達成！　褒賞金 ${formatMoney(o.crown.amount)}` })),
       rivalNote ? el('p', { class: 'rival-note', text: rivalNote }) : null,
       ...outcomes.map((o) => el('p', { class: 'small', text: `${o.horse.name}：${o.rank}着${o.prize ? `　賞金 ${formatMoney(o.prize)}（馬主取り分8割）` : ''}${o.fee ? `　騎乗料 ${formatMoney(o.fee)}（${o.jockey.name}）` : ''}` })),
       el('div', { class: 'table-wrap' }, el('table', { class: 'table' }, [
@@ -137,7 +138,7 @@ export function showWeekReport({ title, outcomes, reports, events, moneyBefore, 
     el('p', { class: 'small', text: `資金 ${formatMoney(moneyBefore)} → ${formatMoney(moneyAfter)}` }),
     ...events.map((e) => el('p', { class: 'event', text: e })),
     outcomes.length ? el('h4', { text: 'レース' }) : null,
-    ...outcomes.map((o) => el('p', { text: `${o.horse.name}：${o.race.name} ${o.rank}着` })),
+    ...outcomes.map((o) => el('p', { text: `${o.horse.name}：${o.race.name} ${o.rank}着${o.crown ? `　👑${o.crown.title}達成` : ''}` })),
     reports.length ? el('h4', { text: '調教' }) : null,
     ...reports.map((r) => el('div', { class: 'report-row' }, [
       el('b', { text: r.horse.name }),

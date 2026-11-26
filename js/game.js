@@ -384,6 +384,25 @@ export function makeGround(race) {
   return weatherFor(race.month);
 }
 
+// 決まった大レースを同じ年にすべて勝つと、特別な称号と褒賞金がもらえる。最後のレースを勝った時点で判定する
+export const CROWNS = [
+  { title: '三冠馬', races: ['王冠賞', '東都ダービー', '菊花の頂'], bonus: 20000 },
+  { title: '牝馬三冠', races: ['花冠賞', '優駿乙女賞', '乙女の冠'], bonus: 10000 },
+  { title: '帝王賞春秋連覇', races: ['春の帝王賞', '秋の帝王賞'], bonus: 8000 },
+  { title: '秋の古馬三冠', races: ['秋の帝王賞', 'ワールドターフカップ', '大晦グランプリ'], bonus: 20000 },
+];
+
+function checkCrown(state, h, race) {
+  const won = new Set(h.record.titles.filter((t) => t.year === state.year).map((t) => t.name));
+  const crown = CROWNS.find((c) => c.races.at(-1) === race.name && c.races.every((n) => won.has(n)));
+  if (!crown) return null;
+  state.money += crown.bonus;
+  const honor = { year: state.year, title: crown.title, horse: h.name, amount: crown.bonus };
+  (h.record.honors ??= []).push(`${state.year}年目${crown.title}`);
+  (state.honors ??= []).push(honor);
+  return honor;
+}
+
 export function applyRaceResults(state, race, results) {
   const out = [];
   for (const res of results) {
@@ -392,6 +411,7 @@ export function applyRaceResults(state, race, results) {
     if (!h) continue;
     const prize = res.rank <= 5 ? Math.round(race.purse * PRIZE_SHARE[res.rank - 1]) : 0;
     const r = h.record;
+    let crown = null;
     r.starts += 1;
     if (res.rank === 1) r.wins += 1;
     if (res.rank === 2) r.seconds += 1;
@@ -404,10 +424,11 @@ export function applyRaceResults(state, race, results) {
       const title = { year: state.year, name: race.name, grade: race.grade, horse: h.name };
       r.titles.push(title);
       state.titles.push(title);
+      crown = checkCrown(state, h, race);
     }
     r.history.push({ year: state.year, week: state.week, name: race.name, grade: race.grade, rank: res.rank, field: results.length, time: res.time });
     applyRaceAftermath(h, race);
-    out.push({ horse: h, rank: res.rank, prize: Math.round(prize * OWNER_SHARE), jockey: res.runner.jockey, fee });
+    out.push({ horse: h, rank: res.rank, prize: Math.round(prize * OWNER_SHARE), jockey: res.runner.jockey, fee, crown });
   }
   return out;
 }

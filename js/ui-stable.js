@@ -101,6 +101,7 @@ function recordTable(h) {
   return el('div', { class: 'record' }, [
     el('p', { class: 'small', text: `${r.starts}戦${r.wins}勝［${r.wins}-${r.seconds}-${r.thirds}-${r.starts - r.wins - r.seconds - r.thirds}］ 獲得賞金 ${formatMoney(r.earnings)}` }),
     r.titles.length ? el('p', { class: 'titles small', text: `重賞：${r.titles.map((t) => `${t.name}(${t.grade})`).join('、')}` }) : null,
+    r.honors?.length ? el('p', { class: 'titles small', text: `栄誉：${r.honors.join('、')}` }) : null,
     list.length ? el('table', { class: 'table' }, [
       el('thead', {}, el('tr', {}, ['時期', 'レース', '着'].map((t) => el('th', { text: t })))),
       el('tbody', {}, list.map((x) => el('tr', { class: x.rank === 1 ? 'is-win' : '' }, [

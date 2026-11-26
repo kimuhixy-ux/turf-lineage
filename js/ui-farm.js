@@ -144,6 +144,19 @@ export function renderFarm(ctx) {
   ]);
 }
 
+// 三冠や年度表彰など、重賞タイトルとは別に残す栄誉。新しいものを上に出す
+function honorSection(state) {
+  const honors = [...(state.honors ?? [])].reverse();
+  if (!honors.length) return [];
+  return [
+    el('h3', { class: 'section-title', text: `栄誉（${honors.length}）` }),
+    ...honors.map((x) => el('div', { class: 'race-row' }, [
+      el('div', {}, [el('b', { text: `👑 ${x.title}` }), el('div', { class: 'muted small', text: `${x.year}年目・${x.horse}` })]),
+      el('span', { class: 'small', text: formatMoney(x.amount) }),
+    ])),
+  ];
+}
+
 // 宿敵ごとの対戦成績。新しい世代を上に出す
 function rivalSection(state) {
   const rivals = [...(state.rivals ?? [])].reverse();
@@ -171,6 +184,7 @@ export function renderRecords(ctx) {
     ...(state.titles.length ? [...state.titles].reverse().map((t) => el('div', { class: 'race-row' }, [
       el('div', {}, [gradeBadge(t.grade), el('b', { text: ` ${t.name}` }), el('div', { class: 'muted small', text: `${t.year}年目・${t.horse}` })]),
     ])) : [el('p', { class: 'muted small', text: 'まだ重賞を勝っていません。' })]),
+    ...honorSection(state),
     ...rivalSection(state),
     el('h3', { class: 'section-title', text: `引退馬（${state.history.length}）` }),
     ...[...state.history].reverse().map((h) => el('p', { class: 'small', text: `${h.name}（${h.sex}・父 ${h.sireName}）${h.record.starts}戦${h.record.wins}勝・${formatMoney(h.record.earnings)}` })),
